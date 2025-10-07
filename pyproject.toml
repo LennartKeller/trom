@@ -5,6 +5,7 @@ description = "Romanize texts in various languages and script systems."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.3.0",
     "iso-639>=0.4.5",
     "jieba>=0.42.1",
     "khmer-nltk>=1.6",
