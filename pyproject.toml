@@ -10,6 +10,7 @@ dependencies = [
     "jieba>=0.42.1",
     "khmer-nltk>=1.6",
     "laonlp>=1.2.0",
+    "pip>=25.2",
     "pycantonese>=3.4.0",
     "pythainlp>=5.1.2",
     "sacremoses>=0.1.1",

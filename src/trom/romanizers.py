@@ -25,26 +25,14 @@ def is_latin(char):
         ValueError: If input is not a single character.
     """
     if len(char) != 1:
-        raise ValueError("Input must be a single character")
-
-    # Get the Unicode category of the character
-    import unicodedata
-
+        return all(is_latin(c) for c in char)
     category = unicodedata.category(char)
-
-    # Check if it's a Latin letter (uppercase or lowercase)
-    # Lu: Uppercase Letter
-    # Ll: Lowercase Letter
-    # Lm: Modifier Letter
-    # Lo: Other Letter (some Latin letters fall here)
     if category.startswith("L"):
-        # Get the name of the character
         try:
             name = unicodedata.name(char)
             return "LATIN" in name
         except ValueError:
             return False
-
     return False
 
 

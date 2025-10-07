@@ -76,10 +76,16 @@ def get_spacy_tokenizer(lang: str):
     if lang not in SPACY_LANGUAGE_TO_MODEL_MAP:
         raise ValueError(f"Unsupported language: {lang}")
 
-    nlp = spacy.load(
-        SPACY_LANGUAGE_TO_MODEL_MAP[lang],
-        disable=["ner", "parser", "entity", "tok2vec", "attribute_ruler"],
-    )
+    try:
+        spacy_model = SPACY_LANGUAGE_TO_MODEL_MAP[lang]
+        nlp = spacy.load(
+            spacy_model,
+            disable=["ner", "parser", "entity", "tok2vec", "attribute_ruler"],
+        )
+    except OSError:
+        spacy.cli.download(spacy_model)
+        return get_spacy_tokenizer(lang)
+
     tokenizer = nlp.tokenizer
 
     def tokenize(s: str) -> list[str]:
