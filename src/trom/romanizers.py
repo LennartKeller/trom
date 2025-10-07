@@ -311,8 +311,8 @@ class UnifiedRomanizer:
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",
-    preprocessor: Optional[Callable[[str], str]] = None,
-    postprocessor: Optional[Callable[[str], str]] = None,
+    preprocessor: Optional[Callable[[str], str] | Literal["aggressive", "tokenize"]] = None,
+    postprocessor: Optional[Callable[[str], str] | Literal["aggressive"]] = None,
     **romanizer_kwargs,
 ) -> URomanizer | UConvRomanizer:
     """
@@ -331,12 +331,31 @@ def get_romanizer_for_lang(
         )
 
     tokenizer = get_tokenizer_for_lang(lang)
+    
     if preprocessor is None:
-        preprocessor = lambda x: " ".join(tokenizer(x))
-    else:
-        def wrapped_preprocessor(x: str) -> str:
-            return " ".join(tokenizer(preprocessor(x)))
-        preprocessor = wrapped_preprocessor
+        preprocessor = lambda text: text
+    elif preprocessor == "aggressive":
+        def preprocessor(text: str) -> str:
+            if not text.strip():
+                return text
+            text = text.lower()
+            tokens = tokenizer(text)
+            text = " ".join(tokens)
+            text = " ".join(text.split())  # Normalize spaces
+            return text
+    elif preprocessor == "tokenize":
+        def preprocessor(text: str) -> str:
+            if not text.strip():
+                return text
+            tokens = tokenizer(text)
+            text = " ".join(tokens)
+            return text
+    
+    if postprocessor is None:
+        postprocessor = lambda text: text
+    elif postprocessor == "aggressive":
+        postprocessor = clean_uromanized_string
+
 
     if romanizer_cls == "uroman":
         romanizer = URomanizer(
