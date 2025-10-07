@@ -311,8 +311,10 @@ class UnifiedRomanizer:
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",
+    preprocessor: Optional[Callable[[str], str]] = None,
+    postprocessor: Optional[Callable[[str], str]] = None,
     **romanizer_kwargs,
-) -> URomanizer:
+) -> URomanizer | UConvRomanizer:
     """
     Gets a URomanizer or UConvRomanizer instance configured for the specified language.
     This function sets up a romanizer with a language specific pre-processing function.
@@ -329,26 +331,23 @@ def get_romanizer_for_lang(
         )
 
     tokenizer = get_tokenizer_for_lang(lang)
-
-    def preprocessor(text: str) -> str:
-        if not text.strip():
-            return text
-        text = text.lower()
-        tokens = tokenizer(text)
-        text = " ".join(tokens)
-        text = " ".join(text.split())  # Normalize spaces
-        return text
+    if preprocessor is None:
+        preprocessor = lambda x: " ".join(tokenizer(x))
+    else:
+        def wrapped_preprocessor(x: str) -> str:
+            return " ".join(tokenizer(preprocessor(x)))
+        preprocessor = wrapped_preprocessor
 
     if romanizer_cls == "uroman":
         romanizer = URomanizer(
             preprocessor=preprocessor,
-            postprocessor=clean_uromanized_string,
+            postprocessor=postprocessor,
             **romanizer_kwargs,
         )
-    elif romanizer_cls == "uconv":
+    else:
         romanizer = UConvRomanizer(
             preprocessor=preprocessor,
-            postprocessor=clean_uromanized_string,
+            postprocessor=postprocessor,
             **romanizer_kwargs,
         )
 
