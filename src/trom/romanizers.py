@@ -307,7 +307,7 @@ class UnifiedRomanizer:
         romanized = [self._romanize(token, src_script=src_script) for token in tokens]
         return self.sep.join(romanized)
 
-
+@lru_cache(maxsize=10_000)
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",
