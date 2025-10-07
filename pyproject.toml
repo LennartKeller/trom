@@ -1,0 +1,33 @@
+[project]
+name = "trom"
+version = "0.1.0"
+description = "Romanize texts in various languages and script systems."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "iso-639>=0.4.5",
+    "jieba>=0.42.1",
+    "khmer-nltk>=1.6",
+    "laonlp>=1.2.0",
+    "pycantonese>=3.4.0",
+    "pythainlp>=5.1.2",
+    "sacremoses>=0.1.1",
+    "spacy>=3.8.7",
+    "uroman",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+uroman = { git = "https://github.com/LennartKeller/uroman.git" }
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+    "ipython>=9.6.0",
+    "ipywidgets>=8.1.7",
+    "isort>=6.1.0",
+    "ruff>=0.13.3",
+]
