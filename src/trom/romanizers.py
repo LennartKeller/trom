@@ -59,6 +59,14 @@ def get_spacing_processor_for_lang(lang: str) -> Callable[[str], str]:
     return get_spacing_processor(tokenizer)
 
 
+uroman = ur.Uroman()
+
+
+@lru_cache(maxsize=10_000_000)
+def _uromanize(s: str) -> str:
+    return uroman.romanize_string(s)
+
+
 class URomanizer:
     def __init__(
         self,
@@ -71,9 +79,8 @@ class URomanizer:
         self.uroman = ur.Uroman()
         self.sep = sep
 
-    @lru_cache(maxsize=10_000_000)
     def _romanize(self, s: str) -> str:
-        return self.uroman.romanize_string(s)
+        return _uromanize(s)
 
     def __call__(self, text: str) -> str:
         text = self.preprocessor(text)
@@ -113,6 +120,36 @@ class UConvInstallationError(Exception): ...
 
 
 class UConvRomanizationError(Exception): ...
+
+
+@lru_cache(maxsize=10_000_000)
+def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
+    if not s.strip():
+        return s
+
+    try:
+        transliteration_mode = "Any-Latin"
+        if src_script and src_script.lower() != "any":
+            transliteration_mode = f"{src_script}-Latin;{transliteration_mode}"
+
+        process = subprocess.run(
+            [self.uconv_path, "-x", transliteration_mode],
+            input=s,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        if self.verbose and process.stderr:
+            print(f"Warning: {process.stderr}", file=sys.stderr)
+
+        romanized = self._format_string(process.stdout)
+        return romanized
+
+    except subprocess.SubprocessError as e:
+        raise UConvRomanizationError(f"Romanization failed: {e}")
+    except Exception as e:
+        raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
 
 
 class UConvRomanizer:
@@ -161,34 +198,8 @@ class UConvRomanizer:
     def _format_string(s: str) -> str:
         return nfkd(s.strip())
 
-    @lru_cache(maxsize=10_000_000)
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
-        if not s.strip():
-            return s
-
-        try:
-            transliteration_mode = "Any-Latin"
-            if src_script and src_script.lower() != "any":
-                transliteration_mode = f"{src_script}-Latin;{transliteration_mode}"
-
-            process = subprocess.run(
-                [self.uconv_path, "-x", transliteration_mode],
-                input=s,
-                text=True,
-                capture_output=True,
-                check=True,
-            )
-
-            if self.verbose and process.stderr:
-                print(f"Warning: {process.stderr}", file=sys.stderr)
-
-            romanized = self._format_string(process.stdout)
-            return romanized
-
-        except subprocess.SubprocessError as e:
-            raise UConvRomanizationError(f"Romanization failed: {e}")
-        except Exception as e:
-            raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
+        return _uconv_romanize(self, s, src_script=src_script)
 
     def __call__(self, text: str, src_script: Optional[str] = None) -> str:
         if not text.strip():
