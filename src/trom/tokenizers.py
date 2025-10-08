@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from typing import Callable, Optional
 
 import jieba
@@ -10,6 +11,16 @@ from pythainlp import word_tokenize as _tokenize_thai
 from sacremoses import MosesTokenizer
 
 from .utils import get_lang_code
+
+
+def word_tokenize(text: str) -> list[str]:
+    """Tokenizes text into words using a simple regex."""
+    return re.findall(r"\w+", text)
+
+
+def remove_whitespaces(s: str) -> str:
+    """Removes all whitespaces from a string."""
+    return "".join(s.split())
 
 
 def tokenizer_khmer(s: str) -> list[str]:

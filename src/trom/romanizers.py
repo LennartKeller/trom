@@ -8,32 +8,55 @@ from typing import Callable, Literal, Optional
 import uroman as ur
 
 from .tokenizers import get_tokenizer_for_lang
-from .unicode import nfkd
+from .unicode import char_is_punct, is_latin, nfkd, string_is_only_punct
 
 
-def is_latin(char):
-    """
-    Check if a character is Latin (including characters with diacritical marks).
+def get_spacing_processor(
+    tokenizer: Callable[[str], list[str]],
+) -> Callable[[str], str]:
+    """Returns a spacing processor that uses the provided tokenizer to add spaces around punctuation.
 
     Args:
-        char (str): A single character to check.
+        tokenizer (Callable[[str], list[str]]): Tokenizer function to split the input string into words.
 
     Returns:
-        bool: True if the character is Latin, False otherwise.
-
-    Raises:
-        ValueError: If input is not a single character.
+        str: Input string with spaces added around punctuation.
     """
-    if len(char) != 1:
-        return all(is_latin(c) for c in char)
-    category = unicodedata.category(char)
-    if category.startswith("L"):
-        try:
-            name = unicodedata.name(char)
-            return "LATIN" in name
-        except ValueError:
-            return False
-    return False
+
+    def spacing_processor(text: str) -> str:
+        words = tokenizer(text)
+        if not words:
+            return text
+
+        result = []
+        for i, token in enumerate(words):
+            is_punct = string_is_only_punct(token)
+
+            if is_punct:
+                # Check if previous token was also punctuation
+                prev_is_punct = i > 0 and string_is_only_punct(words[i - 1])
+
+                if prev_is_punct:
+                    # Multiple consecutive punctuation: attach to previous
+                    result.append(token)
+                else:
+                    # First punctuation after word: attach to previous word
+                    result.append(token)
+            else:
+                # Regular word: add space before unless it's first token
+                if i == 0:
+                    result.append(token)
+                else:
+                    result.append(" " + token)
+
+        return "".join(result).strip()
+
+    return spacing_processor
+
+
+def get_spacing_processor_for_lang(lang: str) -> Callable[[str], str]:
+    tokenizer = get_tokenizer_for_lang(lang)
+    return get_spacing_processor(tokenizer)
 
 
 class URomanizer:
@@ -307,11 +330,14 @@ class UnifiedRomanizer:
         romanized = [self._romanize(token, src_script=src_script) for token in tokens]
         return self.sep.join(romanized)
 
+
 @lru_cache(maxsize=10_000)
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",
-    preprocessor: Optional[Callable[[str], str] | Literal["aggressive", "tokenize"]] = None,
+    preprocessor: Optional[
+        Callable[[str], str] | Literal["aggressive", "tokenize"]
+    ] = None,
     postprocessor: Optional[Callable[[str], str] | Literal["aggressive"]] = None,
     **romanizer_kwargs,
 ) -> URomanizer | UConvRomanizer:
@@ -331,10 +357,11 @@ def get_romanizer_for_lang(
         )
 
     tokenizer = get_tokenizer_for_lang(lang)
-    
+
     if preprocessor is None:
         preprocessor = lambda text: text
     elif preprocessor == "aggressive":
+
         def preprocessor(text: str) -> str:
             if not text.strip():
                 return text
@@ -343,19 +370,14 @@ def get_romanizer_for_lang(
             text = " ".join(tokens)
             text = " ".join(text.split())  # Normalize spaces
             return text
+
     elif preprocessor == "tokenize":
-        def preprocessor(text: str) -> str:
-            if not text.strip():
-                return text
-            tokens = tokenizer(text)
-            text = " ".join(tokens)
-            return text
-    
+        preprocessor = get_spacing_processor(tokenizer)
+
     if postprocessor is None:
         postprocessor = lambda text: text
     elif postprocessor == "aggressive":
         postprocessor = clean_uromanized_string
-
 
     if romanizer_cls == "uroman":
         romanizer = URomanizer(
