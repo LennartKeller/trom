@@ -61,7 +61,7 @@ else:
         """
         Tokenize Chinese text using jieba.
         """
-        return list(get_jieba().cut(s))
+        return list(_get_jieba().cut(s))
 
 
 def tokenize_thai(s: str) -> list[str]:
