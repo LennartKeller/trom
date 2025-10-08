@@ -1,7 +1,8 @@
+import os
 import re
+from functools import lru_cache
 from typing import Callable, Optional
 
-import jieba
 import pkuseg
 import pycantonese
 import spacy
@@ -37,20 +38,30 @@ def tokenize_cantonese(s: str) -> list[str]:
     return pycantonese.segment(s)
 
 
-# def tokenize_chinese(s: str) -> list[str]:
-#     """
-#     Tokenize Chinese text using jieba.
-#     """
-#     return list(jieba.cut(s))
+if os.getenv("CHINESE_TOKENIZER", "pkuseg"):
 
-seg = pkuseg.pkuseg()
+    @lru_cache()
+    def _get_pkuseg_seg():
+        return pkuseg.pkuseg()
 
+    def tokenize_chinese(s: str) -> list[str]:
+        """
+        Tokenize Chinese text using pkuseg.
+        """
+        return _get_pkuseg_seg().cut(s)
+else:
 
-def tokenize_chinese(s: str) -> list[str]:
-    """
-    Tokenize Chinese text using pkuseg.
-    """
-    return seg.cut(s)
+    @lru_cache()
+    def _get_jieba():
+        import jieba
+
+        return jieba
+
+    def tokenize_chinese(s: str) -> list[str]:
+        """
+        Tokenize Chinese text using jieba.
+        """
+        return list(get_jieba().cut(s))
 
 
 def tokenize_thai(s: str) -> list[str]:
