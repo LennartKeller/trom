@@ -38,7 +38,7 @@ def tokenize_cantonese(s: str) -> list[str]:
     return pycantonese.segment(s)
 
 
-if os.getenv("CHINESE_TOKENIZER", "pkuseg"):
+if os.getenv("CHINESE_TOKENIZER", "pkuseg") == "pkuseg":
 
     @lru_cache()
     def _get_pkuseg_seg():
