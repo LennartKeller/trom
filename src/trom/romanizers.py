@@ -446,6 +446,17 @@ def get_romanizer_for_lang(
     elif postprocessor == "aggressive":
         postprocessor = clean_uromanized_string
 
+    default_lang_kwargs = {
+        # Enable more aggressive caching for logographic languages
+        "cmn": {"sep": ""},
+        "zho": {"sep": ""},
+        "jpn": {"sep": ""},
+    }
+    if lang in default_lang_kwargs:
+        for kwarg, val in default_lang_kwargs[lang].items():
+            if kwarg not in romanizer_kwargs:
+                romanizer_kwargs[kwarg] = val
+
     if romanizer_cls == "uroman":
         romanizer = URomanizer(
             preprocessor=preprocessor,
