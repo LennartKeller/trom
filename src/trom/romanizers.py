@@ -10,6 +10,8 @@ import uroman as ur
 from .tokenizers import get_tokenizer_for_lang
 from .unicode import char_is_punct, is_latin, nfkd, string_is_only_punct
 
+JOINER_PUNCTUATION = set(":=/\\")
+
 
 def get_spacing_processor(
     tokenizer: Callable[[str], list[str]],
@@ -28,13 +30,24 @@ def get_spacing_processor(
         if not words:
             return text
 
+        def string_is_only_digits(s: str) -> bool:
+            return all(char.isdigit() for char in s)
+
+        def is_joiner(s: str) -> bool:
+            return all(char in JOINER_PUNCTUATION for char in s)
+
         result = []
         for i, token in enumerate(words):
             is_punct = string_is_only_punct(token)
+            is_digit = string_is_only_digits(token)
 
             if is_punct:
                 # Check if previous token was also punctuation
                 prev_is_punct = i > 0 and string_is_only_punct(words[i - 1])
+
+                if prev_is_punct and is_joiner(token):
+                    # Joiner punctuation: attach to previous token without space
+                    result.append(token)
 
                 if prev_is_punct:
                     # Multiple consecutive punctuation: attach to previous
@@ -42,6 +55,12 @@ def get_spacing_processor(
                 else:
                     # First punctuation after word: attach to previous word
                     result.append(token)
+            elif is_digit:
+                # Digits: add space before unless it's first token
+                if i == 0:
+                    result.append(token)
+                else:
+                    result.append(" " + token)
             else:
                 # Regular word: add space before unless it's first token
                 if i == 0:
@@ -73,19 +92,53 @@ class URomanizer:
         preprocessor: Optional[Callable[[str], str]] = None,
         postprocessor: Optional[Callable[[str], str]] = None,
         sep: str = " ",
+        split_alphanumeric: bool = True,
     ):
         self.preprocessor = preprocessor or (lambda x: x)
         self.postprocessor = postprocessor or (lambda x: x)
         self.uroman = ur.Uroman()
         self.sep = sep
+        self.split_alphanumeric = split_alphanumeric
 
     def _romanize(self, s: str) -> str:
         return _uromanize(s)
+
+    def _split_alphanumeric_token(self, token: str) -> str:
+        """Split tokens with embedded digits like 'di2duan' -> 'di 2 duan'"""
+        if not self.split_alphanumeric:
+            return token
+
+        # Split on digit boundaries: letter->digit or digit->letter
+        result = []
+        prev_is_digit = None
+        current = []
+
+        for char in token:
+            is_digit = char.isdigit()
+            if prev_is_digit is not None and prev_is_digit != is_digit:
+                # Boundary detected
+                result.append("".join(current))
+                current = [char]
+            else:
+                current.append(char)
+            prev_is_digit = is_digit
+
+        if current:
+            result.append("".join(current))
+
+        return " ".join(result)
 
     def __call__(self, text: str) -> str:
         text = self.preprocessor(text)
         tokens = text.split(self.sep)
         romanized_units = [self._romanize(token) for token in tokens]
+
+        # Post-process to split alphanumeric tokens
+        if self.split_alphanumeric:
+            romanized_units = [
+                self._split_alphanumeric_token(unit) for unit in romanized_units
+            ]
+
         romanized_text = self.sep.join(romanized_units)
         romanized_text = self.postprocessor(romanized_text)
         return romanized_text
