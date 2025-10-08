@@ -1,8 +1,8 @@
 import re
-import unicodedata
 from typing import Callable, Optional
 
 import jieba
+import pkuseg
 import pycantonese
 import spacy
 from khmernltk import word_tokenize as _tokenize_khmer
@@ -37,11 +37,20 @@ def tokenize_cantonese(s: str) -> list[str]:
     return pycantonese.segment(s)
 
 
+# def tokenize_chinese(s: str) -> list[str]:
+#     """
+#     Tokenize Chinese text using jieba.
+#     """
+#     return list(jieba.cut(s))
+
+seg = pkuseg.pkuseg()
+
+
 def tokenize_chinese(s: str) -> list[str]:
     """
-    Tokenize Chinese text using jieba.
+    Tokenize Chinese text using pkuseg.
     """
-    return list(jieba.cut(s))
+    return seg.cut(s)
 
 
 def tokenize_thai(s: str) -> list[str]:
