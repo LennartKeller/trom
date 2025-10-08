@@ -130,7 +130,10 @@ class URomanizer:
 
     def __call__(self, text: str) -> str:
         text = self.preprocessor(text)
-        tokens = text.split(self.sep)
+        if self.sep == "":
+            tokens = list(text)
+        else:
+            tokens = text.split(self.sep)
         romanized_units = [self._romanize(token) for token in tokens]
 
         # Post-process to split alphanumeric tokens
