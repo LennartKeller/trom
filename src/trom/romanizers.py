@@ -92,7 +92,7 @@ class URomanizer:
         preprocessor: Optional[Callable[[str], str]] = None,
         postprocessor: Optional[Callable[[str], str]] = None,
         sep: str = " ",
-        split_alphanumeric: bool = True,
+        split_alphanumeric: bool = False,
     ):
         self.preprocessor = preprocessor or (lambda x: x)
         self.postprocessor = postprocessor or (lambda x: x)
