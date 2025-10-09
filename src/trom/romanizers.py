@@ -289,7 +289,10 @@ class UConvRomanizer:
         if not text.strip():
             return text
         text = self.preprocessor(text)
-        tokens = text.split(self.sep)
+        if self.sep == "":
+            tokens = list(text)
+        else:
+            tokens = text.split(self.sep)
         romanized = [self._romanize(token, src_script=src_script) for token in tokens]
         romanized_text = self.sep.join(romanized)
         romanized_text = self.postprocessor(romanized_text)
