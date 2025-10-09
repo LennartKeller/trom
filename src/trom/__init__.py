@@ -2,8 +2,8 @@ from .romanizers import (
     UConvRomanizer,
     UnifiedRomanizer,
     URomanizer,
-    _uconv_romanize,
     get_romanizer_for_lang,
+    uconv_romanize,
     uroman,
 )
 
@@ -13,5 +13,5 @@ __all__ = [
     "UConvRomanizer",
     "UnifiedRomanizer",
     "uroman",
-    "_uconv_romanize",
+    "uconv_romanize",
 ]
