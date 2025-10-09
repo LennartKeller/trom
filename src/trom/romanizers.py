@@ -179,7 +179,20 @@ class UConvRomanizationError(Exception): ...
 
 
 @lru_cache(maxsize=10_000_000)
-def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
+def uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
+    """Romanize a string using the uconv tool.
+
+    Args:
+        s (str): Input string to romanize.
+        src_script (Optional[str], optional): Source script to use for romanization. Defaults to None.
+
+    Raises:
+        UConvRomanizationError: If romanization fails.
+        UConvRomanizationError: If an unexpected error occurs.
+
+    Returns:
+        str: The romanized string.
+    """
     if not s.strip():
         return s
 
@@ -255,7 +268,7 @@ class UConvRomanizer:
         return nfkd(s.strip())
 
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
-        return _uconv_romanize(self, s, src_script=src_script)
+        return uconv_romanize(self, s, src_script=src_script)
 
     def __call__(self, text: str, src_script: Optional[str] = None) -> str:
         if not text.strip():
