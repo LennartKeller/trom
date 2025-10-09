@@ -179,7 +179,12 @@ class UConvRomanizationError(Exception): ...
 
 
 @lru_cache(maxsize=10_000_000)
-def uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
+def uconv_romanize(
+    s: str,
+    src_script: Optional[str] = None,
+    verbose: bool = True,
+    uconv_path: str = "uconv",
+) -> str:
     """Romanize a string using the uconv tool.
 
     Args:
@@ -195,30 +200,40 @@ def uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
     """
     if not s.strip():
         return s
-
     try:
         transliteration_mode = "Any-Latin"
         if src_script and src_script.lower() != "any":
             transliteration_mode = f"{src_script}-Latin;{transliteration_mode}"
 
         process = subprocess.run(
-            [self.uconv_path, "-x", transliteration_mode],
+            [uconv_path, "-x", transliteration_mode],
             input=s,
             text=True,
             capture_output=True,
             check=True,
         )
 
-        if self.verbose and process.stderr:
+        if verbose and process.stderr:
             print(f"Warning: {process.stderr}", file=sys.stderr)
 
-        romanized = self._format_string(process.stdout)
-        return romanized
+        return process.stdout
 
     except subprocess.SubprocessError as e:
         raise UConvRomanizationError(f"Romanization failed: {e}")
     except Exception as e:
         raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
+
+
+@lru_cache(maxsize=10_000_000)
+def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
+    if not s.strip():
+        return s
+    romanized = uconv_romanize(
+        s, src_script=src_script, verbose=self.verbose, uconv_path=self.uconv_path
+    )
+    romanized = self._format_string(romanized)
+
+    return romanized
 
 
 class UConvRomanizer:
@@ -268,7 +283,7 @@ class UConvRomanizer:
         return nfkd(s.strip())
 
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
-        return uconv_romanize(self, s, src_script=src_script)
+        return _uconv_romanize(self, s, src_script=src_script)
 
     def __call__(self, text: str, src_script: Optional[str] = None) -> str:
         if not text.strip():
