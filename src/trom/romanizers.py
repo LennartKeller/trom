@@ -82,7 +82,7 @@ uroman = ur.Uroman()
 
 
 @lru_cache(maxsize=10_000_000)
-def _uromanize(s: str) -> str:
+def uromanize(s: str) -> str:
     return uroman.romanize_string(s)
 
 
@@ -101,7 +101,7 @@ class URomanizer:
         self.split_alphanumeric = split_alphanumeric
 
     def _romanize(self, s: str) -> str:
-        return _uromanize(s)
+        return uromanize(s)
 
     def _split_alphanumeric_token(self, token: str) -> str:
         """Split tokens with embedded digits like 'di2duan' -> 'di 2 duan'"""

@@ -5,6 +5,7 @@ from .romanizers import (
     get_romanizer_for_lang,
     uconv_romanize,
     uroman,
+    uromanize,
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "UConvRomanizer",
     "UnifiedRomanizer",
     "uroman",
+    "uromanize",
     "uconv_romanize",
 ]
