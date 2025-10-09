@@ -231,7 +231,6 @@ def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
     romanized = uconv_romanize(
         s, src_script=src_script, verbose=self.verbose, uconv_path=self.uconv_path
     )
-    romanized = self._format_string(romanized)
 
     return romanized
 
@@ -277,10 +276,6 @@ class UConvRomanizer:
             )
         except FileNotFoundError:
             raise UConvInstallationError(f"uconv not found at path: {uconv_path}")
-
-    @staticmethod
-    def _format_string(s: str) -> str:
-        return nfkd(s.strip())
 
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
         return _uconv_romanize(self, s, src_script=src_script)
