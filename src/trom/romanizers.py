@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 import sys
@@ -9,6 +10,8 @@ import uroman as ur
 
 from .tokenizers import get_tokenizer_for_lang
 from .unicode import char_is_punct, is_latin, nfkd, string_is_only_punct
+
+TROM_CACHE_SIZE = int(os.getenv("TROM_CACHE_SIZE", "10000000"))
 
 JOINER_PUNCTUATION = set(":=/\\")
 
@@ -81,7 +84,7 @@ def get_spacing_processor_for_lang(lang: str) -> Callable[[str], str]:
 uroman = ur.Uroman()
 
 
-@lru_cache(maxsize=10_000_000)
+@lru_cache(maxsize=TROM_CACHE_SIZE)
 def uromanize(s: str) -> str:
     return uroman.romanize_string(s)
 
@@ -224,7 +227,7 @@ def uconv_romanize(
         raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
 
 
-@lru_cache(maxsize=10_000_000)
+@lru_cache(maxsize=TROM_CACHE_SIZE)
 def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
     if not s.strip():
         return s
@@ -383,7 +386,7 @@ class UnifiedRomanizer:
 
         return "".join(result)
 
-    @lru_cache(maxsize=10_000_000)
+    @lru_cache(maxsize=TROM_CACHE_SIZE)
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
         """
         Romanize a string using a two-pass approach with improved detection
@@ -424,7 +427,7 @@ class UnifiedRomanizer:
         return self.sep.join(romanized)
 
 
-@lru_cache(maxsize=10_000)
+@lru_cache(maxsize=TROM_CACHE_SIZE)
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",
