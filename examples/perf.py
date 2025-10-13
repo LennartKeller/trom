@@ -13,7 +13,7 @@ if __name__ == "__main__":
     
     print("Loading dataset...")
     NUM_SAMPLES = int(os.getenv("NUM_SAMPLES", -1))
-    ds = Dataset.from_parquet("/Users/lennartkeller/Downloads/000_00000.parquet")
+    ds = Dataset.from_parquet(parquet_path)
     if NUM_SAMPLES > 0:
         ds = ds.select(range(NUM_SAMPLES))
     print(f"Using {len(ds)} samples")
