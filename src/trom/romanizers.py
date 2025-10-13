@@ -7,9 +7,10 @@ from functools import lru_cache
 from typing import Callable, Literal, Optional
 
 import uroman as ur
+from uroman_rs import Uroman as UromanRS
 
 from .tokenizers import get_tokenizer_for_lang
-from .unicode import char_is_punct, is_latin, nfkd, string_is_only_punct
+from .unicode import is_latin, string_is_only_punct
 
 TROM_CACHE_SIZE = int(os.getenv("TROM_CACHE_SIZE", "10000000"))
 
@@ -89,6 +90,14 @@ def uromanize(s: str) -> str:
     return uroman.romanize_string(s)
 
 
+uroman_rs = UromanRS()
+
+
+@lru_cache(maxsize=TROM_CACHE_SIZE)
+def uromanize_rs(s: str) -> str:
+    return uroman_rs.romanize(s)
+
+
 class URomanizer:
     def __init__(
         self,
@@ -96,15 +105,24 @@ class URomanizer:
         postprocessor: Optional[Callable[[str], str]] = None,
         sep: str = " ",
         split_alphanumeric: bool = False,
+        backend: Literal["uroman", "uroman_rs"] = "uroman",
     ):
         self.preprocessor = preprocessor or (lambda x: x)
         self.postprocessor = postprocessor or (lambda x: x)
         self.uroman = ur.Uroman()
         self.sep = sep
         self.split_alphanumeric = split_alphanumeric
+        if backend not in ("uroman", "uroman_rs"):
+            raise ValueError(
+                f"Invalid backend: {backend}. Choose 'uroman' or 'uroman_rs'."
+            )
+        self.backend = backend
 
     def _romanize(self, s: str) -> str:
-        return uromanize(s)
+        if self.backend == "uroman":
+            return uromanize(s)
+        else:
+            return uromanize_rs(s)
 
     def _split_alphanumeric_token(self, token: str) -> str:
         """Split tokens with embedded digits like 'di2duan' -> 'di 2 duan'"""

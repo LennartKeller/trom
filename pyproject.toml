@@ -16,6 +16,7 @@ dependencies = [
     "sacremoses>=0.1.1",
     "spacy>=3.8.7",
     "uroman",
+    "uroman-rs",
 ]
 
 [build-system]
@@ -24,6 +25,7 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 uroman = { git = "https://github.com/LennartKeller/uroman.git" }
+uroman-rs = { git = "https://github.com/LennartKeller/uroman-rs.git" }
 
 [dependency-groups]
 dev = [
