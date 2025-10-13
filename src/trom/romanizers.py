@@ -105,21 +105,21 @@ class URomanizer:
         postprocessor: Optional[Callable[[str], str]] = None,
         sep: str = " ",
         split_alphanumeric: bool = False,
-        backend: Literal["uroman", "uroman_rs"] = "uroman",
+        backend: Literal["python", "rust"] = "python",
     ):
         self.preprocessor = preprocessor or (lambda x: x)
         self.postprocessor = postprocessor or (lambda x: x)
         self.uroman = ur.Uroman()
         self.sep = sep
         self.split_alphanumeric = split_alphanumeric
-        if backend not in ("uroman", "uroman_rs"):
+        if backend not in ("python", "rust"):
             raise ValueError(
-                f"Invalid backend: {backend}. Choose 'uroman' or 'uroman_rs'."
+                f"Invalid backend: {backend}. Choose 'python' or 'rust'."
             )
         self.backend = backend
 
     def _romanize(self, s: str) -> str:
-        if self.backend == "uroman":
+        if self.backend == "python":
             return uromanize(s)
         else:
             return uromanize_rs(s)
