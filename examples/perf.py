@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
 
     uromanizer_py = trom.URomanizer()
-    uromanizer_rust = trom.URomanizer(backend="uroman_rs")
+    uromanizer_rust = trom.URomanizer(backend="rust")
 
     print("Profiling Python backend...")
     start = timer()
