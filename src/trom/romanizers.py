@@ -86,16 +86,16 @@ uroman = ur.Uroman()
 
 
 @lru_cache(maxsize=TROM_CACHE_SIZE)
-def uromanize(s: str) -> str:
-    return uroman.romanize_string(s)
+def uromanize(s: str, lcode: Optional[str] = None) -> str:
+    return uroman.romanize_string(s, lcode=lcode)
 
 
 uroman_rs = UromanRS()
 
 
 @lru_cache(maxsize=TROM_CACHE_SIZE)
-def uromanize_rs(s: str) -> str:
-    return uroman_rs.romanize(s)
+def uromanize_rs(s: str, lcode: Optional[str] = None) -> str:
+    return uroman_rs.romanize(s, lcode=lcode)
 
 
 class URomanizer:
@@ -113,16 +113,14 @@ class URomanizer:
         self.sep = sep
         self.split_alphanumeric = split_alphanumeric
         if backend not in ("python", "rust"):
-            raise ValueError(
-                f"Invalid backend: {backend}. Choose 'python' or 'rust'."
-            )
+            raise ValueError(f"Invalid backend: {backend}. Choose 'python' or 'rust'.")
         self.backend = backend
 
-    def _romanize(self, s: str) -> str:
+    def _romanize(self, s: str, lcode: Optional[str] = None) -> str:
         if self.backend == "python":
-            return uromanize(s)
+            return uromanize(s, lcode=lcode)
         else:
-            return uromanize_rs(s)
+            return uromanize_rs(s, lcode=lcode)
 
     def _split_alphanumeric_token(self, token: str) -> str:
         """Split tokens with embedded digits like 'di2duan' -> 'di 2 duan'"""
@@ -149,13 +147,13 @@ class URomanizer:
 
         return " ".join(result)
 
-    def __call__(self, text: str) -> str:
+    def __call__(self, text: str, lcode: Optional[str] = None) -> str:
         text = self.preprocessor(text)
         if self.sep == "":
             tokens = list(text)
         else:
             tokens = text.split(self.sep)
-        romanized_units = [self._romanize(token) for token in tokens]
+        romanized_units = [self._romanize(token, lcode=lcode) for token in tokens]
 
         # Post-process to split alphanumeric tokens
         if self.split_alphanumeric:
