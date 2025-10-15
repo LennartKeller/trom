@@ -82,20 +82,24 @@ def get_spacing_processor_for_lang(lang: str) -> Callable[[str], str]:
     return get_spacing_processor(tokenizer)
 
 
-uroman = ur.Uroman()
+@lru_cache(maxsize=TROM_CACHE_SIZE)
+def _get_uroman(*args, **kwargs):
+    return ur.Uroman(*args, **kwargs)
 
 
 @lru_cache(maxsize=TROM_CACHE_SIZE)
 def uromanize(s: str, lcode: Optional[str] = None) -> str:
-    return uroman.romanize_string(s, lcode=lcode)
+    return _get_uroman().romanize_string(s, lcode=lcode)
 
 
-uroman_rs = UromanRS()
+@lru_cache(maxsize=TROM_CACHE_SIZE)
+def _get_uroman_rs(*args, **kwargs):
+    return UromanRS(*args, **kwargs)
 
 
 @lru_cache(maxsize=TROM_CACHE_SIZE)
 def uromanize_rs(s: str, lcode: Optional[str] = None) -> str:
-    return uroman_rs.romanize(s, lcode=lcode)
+    return _get_uroman_rs().romanize(s, lcode=lcode)
 
 
 class URomanizer:

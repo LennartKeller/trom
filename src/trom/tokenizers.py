@@ -2,11 +2,10 @@ import re
 from functools import lru_cache
 from typing import Callable, Optional
 
-import spacy
-from sacremoses import MosesTokenizer
-
 from .utils import get_lang_code
 
+_MosesTokenizer = None
+_spacy = None
 _jieba = None
 _pycantonese = None
 _tokenize_khmer = None
@@ -95,7 +94,13 @@ def get_moses_tokenizer(lang: Optional[str] = None) -> Callable[[str], list[str]
     """
     Tokenize text using Moses tokenizer.
     """
-    tokenizer = MosesTokenizer(lang=lang)
+    global _MosesTokenizer
+    if _MosesTokenizer is None:
+        from sacremoses import MosesTokenizer
+
+        _MosesTokenizer = MosesTokenizer
+
+    tokenizer = _MosesTokenizer(lang=lang)
 
     def tokenize(s: str) -> list[str]:
         return tokenizer.tokenize(s, escape=False)
@@ -115,6 +120,12 @@ def get_spacy_tokenizer(lang: str):
     """
     Get a spaCy tokenizer for the specified language.
     """
+    global _spacy
+    if _spacy is None:
+        import spacy
+
+        _spacy = spacy
+
     lang = get_lang_code(lang)
 
     if lang not in SPACY_LANGUAGE_TO_MODEL_MAP:
@@ -122,12 +133,12 @@ def get_spacy_tokenizer(lang: str):
 
     try:
         spacy_model = SPACY_LANGUAGE_TO_MODEL_MAP[lang]
-        nlp = spacy.load(
+        nlp = _spacy.load(
             spacy_model,
             disable=["ner", "parser", "entity", "tok2vec", "attribute_ruler"],
         )
     except OSError:
-        spacy.cli.download(spacy_model)
+        _spacy.cli.download(spacy_model)
         return get_spacy_tokenizer(lang)
 
     tokenizer = nlp.tokenizer
