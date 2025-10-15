@@ -1,17 +1,17 @@
-import os
 import re
 from functools import lru_cache
 from typing import Callable, Optional
 
-import jieba
-import pycantonese
 import spacy
-from khmernltk import word_tokenize as _tokenize_khmer
-from laonlp import word_tokenize as tokenize_lao
-from pythainlp import word_tokenize as _tokenize_thai
 from sacremoses import MosesTokenizer
 
 from .utils import get_lang_code
+
+_jieba = None
+_pycantonese = None
+_tokenize_khmer = None
+_tokenize_lao = None
+_tokenize_thai = None
 
 
 def word_tokenize(text: str) -> list[str]:
@@ -28,6 +28,11 @@ def tokenizer_khmer(s: str) -> list[str]:
     """
     Tokenize Khmer text using khmernltk.
     """
+    global _tokenize_khmer
+    if _tokenize_khmer is None:
+        from khmernltk import word_tokenize as _tokenize_khmer
+
+        _tokenize_khmer = _tokenize_khmer
     return _tokenize_khmer(s, return_tokens=True)
 
 
@@ -35,21 +40,48 @@ def tokenize_cantonese(s: str) -> list[str]:
     """
     Tokenize Cantonese text using pycantonese.
     """
-    return pycantonese.segment(s)
+    global _pycantonese
+    if _pycantonese is None:
+        import pycantonese
+
+        _pycantonese = pycantonese
+    return _pycantonese.segment(s)
 
 
 def tokenize_chinese(s: str) -> list[str]:
     """
     Tokenize Chinese text using jieba.
     """
-    return list(jieba.cut(s))
+    global _jieba
+    if _jieba is None:
+        import jieba
+
+        _jieba = jieba
+    return list(_jieba.cut(s))
 
 
 def tokenize_thai(s: str) -> list[str]:
     """
     Tokenize Thai text using pythainlp.
     """
+    global _tokenize_thai
+    if _tokenize_thai is None:
+        from pythainlp import word_tokenize
+
+        _tokenize_thai = word_tokenize
     return _tokenize_thai(s)
+
+
+def tokenize_lao(s: str) -> list[str]:
+    """
+    Tokenize Lao text using laonlp.
+    """
+    global _tokenize_lao
+    if _tokenize_lao is None:
+        from laonlp import word_tokenize
+
+        _tokenize_lao = word_tokenize
+    return _tokenize_lao(s)
 
 
 def tokenize_whitespace(s: str) -> list[str]:
@@ -109,22 +141,25 @@ def get_spacy_tokenizer(lang: str):
     return tokenize
 
 
-LANGUAGE_TO_TOKENIZER_MAP = {
-    "khm": tokenizer_khmer,
-    "yue": tokenize_cantonese,
-    "zho": tokenize_chinese,
-    "cmn": tokenize_chinese,  # Mandarin Chinese
-    "tha": tokenize_thai,
-    "lao": tokenize_lao,
-    # SacreMoses: French splits "l'espoir" in ["l'", "espoir"] which is harmful for our purposes
-    "fra": tokenize_whitespace,
-    "cjk": get_moses_tokenizer(lang="zh"),
-    "eng": get_moses_tokenizer(lang="en"),
-    "kor": get_moses_tokenizer(lang="ko"),
-    # "jpn": get_moses_tokenizer(lang="ja"),
-    "jpn": get_spacy_tokenizer("jpn"),
-    "kor": get_spacy_tokenizer("kor"),
-}
+@lru_cache(maxsize=None)
+def get_tokenizer_lang_map() -> dict[str, Callable[[str], list[str]]]:
+    LANGUAGE_TO_TOKENIZER_MAP = {
+        "khm": tokenizer_khmer,
+        "yue": tokenize_cantonese,
+        "zho": tokenize_chinese,
+        "cmn": tokenize_chinese,  # Mandarin Chinese
+        "tha": tokenize_thai,
+        "lao": tokenize_lao,
+        # SacreMoses: French splits "l'espoir" in ["l'", "espoir"] which is harmful for our purposes
+        "fra": tokenize_whitespace,
+        "cjk": get_moses_tokenizer(lang="zh"),
+        "eng": get_moses_tokenizer(lang="en"),
+        # "kor": get_moses_tokenizer(lang="ko"),
+        # "jpn": get_moses_tokenizer(lang="ja"),
+        "jpn": get_spacy_tokenizer("jpn"),
+        "kor": get_spacy_tokenizer("kor"),
+    }
+    return LANGUAGE_TO_TOKENIZER_MAP
 
 
 def get_tokenizer_for_lang(
@@ -137,8 +172,8 @@ def get_tokenizer_for_lang(
     otherwise it defaults to whitespace tokenizer.
     """
     part2_lang_code = get_lang_code(lang_code)
-    if part2_lang_code in LANGUAGE_TO_TOKENIZER_MAP:
-        return LANGUAGE_TO_TOKENIZER_MAP[part2_lang_code]
+    if part2_lang_code in get_tokenizer_lang_map():
+        return get_tokenizer_lang_map()[part2_lang_code]
     elif default_moses:
         return get_moses_tokenizer(lang=lang_code)
     else:

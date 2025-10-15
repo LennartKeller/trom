@@ -28,13 +28,13 @@ if __name__ == "__main__":
 
     print("Profiling Python backend...")
     start = timer()
-    ds = ds.map(lambda x: {"text_py": uromanizer_py(x["text"])}, num_proc=NUM_PROC, load_from_cache_file=False)
+    ds = ds.map(lambda x: {"text_py": uromanizer_py(x["text"], lcode="cmn")}, num_proc=NUM_PROC, load_from_cache_file=False)
     end = timer()
     print(f"Python backend took {end - start} seconds")
 
     print("Profiling Rust backend...")
     start = timer()
-    ds = ds.map(lambda x: {"text_rs": uromanizer_rust(x["text"])}, num_proc=NUM_PROC, load_from_cache_file=False)
+    ds = ds.map(lambda x: {"text_rs": uromanizer_rust(x["text"], lcode="cmn")}, num_proc=NUM_PROC, load_from_cache_file=False)
     end = timer()
     print(f"Rust backend took {end - start} seconds")
 
