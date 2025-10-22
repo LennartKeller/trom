@@ -66,3 +66,21 @@ def is_latin(char):
         except ValueError:
             return False
     return False
+
+
+def get_unicode_codepoints(s: str, as_hex: bool = True):
+    """
+    Return the list of Unicode code points for a given UTF string.
+
+    Args:
+        s (str): Input string.
+        as_hex (bool): If True, return code points in hexadecimal (e.g. 'U+1F600'),
+                       otherwise return as integers.
+
+    Returns:
+        list[str] | list[int]: Unicode code points of all characters.
+    """
+    if as_hex:
+        return [f"U+{ord(c):04X}" for c in s]
+    else:
+        return [ord(c) for c in s]
