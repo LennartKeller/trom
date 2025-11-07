@@ -1,3 +1,4 @@
+import os
 import re
 from functools import lru_cache
 from typing import Callable, Optional
@@ -6,7 +7,6 @@ from .utils import get_lang_code
 
 _MosesTokenizer = None
 _spacy = None
-_jieba = None
 _pycantonese = None
 _tokenize_khmer = None
 _tokenize_lao = None
@@ -47,18 +47,53 @@ def tokenize_cantonese(s: str) -> list[str]:
     return _pycantonese.segment(s)
 
 
-def tokenize_chinese(s: str) -> list[str]:
-    """
-    Tokenize Chinese text using jieba.
-    """
-    global _jieba
-    if _jieba is None:
-        import jieba
+CHINESE_TOKENIZER_BACKEND = os.getenv("TROM_CHINESE_BACKEND", "pkuseg").lower()
+if CHINESE_TOKENIZER_BACKEND == "jieba":
+    print("Using jieba for Chinese tokenization.")
+    _jieba = None
 
-        jieba.setLogLevel(20)  # Suppress jieba logging
+    def tokenize_chinese(s: str) -> list[str]:
+        """
+        Tokenize Chinese text using jieba.
+        """
+        global _jieba
+        if _jieba is None:
+            import jieba
 
-        _jieba = jieba
-    return list(_jieba.cut(s))
+            # Suppress jieba logging
+            jieba.setLogLevel(20)
+
+            _jieba = jieba
+        return list(_jieba.cut(s))
+
+elif CHINESE_TOKENIZER_BACKEND == "thulac":
+    print("Using thulac for Chinese tokenization.")
+    _thulac = None
+
+    def tokenize_chinese(s: str) -> list[str]:
+        """
+        Tokenize Chinese text using thulac.
+        """
+        global _thulac
+        if _thulac is None:
+            import thulac
+
+            _thulac = thulac.thulac(seg_only=True)
+        tokens = _thulac.cut(s)
+        return [token[0] for token in tokens]
+else:
+    _pkuseg = None
+
+    def tokenize_chinese(s: str) -> list[str]:
+        """
+        Tokenize Chinese text using pkuseg.
+        """
+        global _pkuseg
+        if _pkuseg is None:
+            import pkuseg
+
+            _pkuseg = pkuseg.pkuseg()
+        return _pkuseg.cut(s)
 
 
 def tokenize_thai(s: str) -> list[str]:

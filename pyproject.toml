@@ -10,11 +10,14 @@ dependencies = [
     "jieba>=0.42.1",
     "khmer-nltk>=1.6",
     "laonlp>=1.2.0",
+    "numpy>=2.3.3",
     "pip>=25.2",
+    "pkuseg>=0.0.25",
     "pycantonese>=3.4.0",
     "pythainlp>=5.1.2",
     "sacremoses>=0.1.1",
     "spacy>=3.8.7",
+    "thulac>=0.2.2",
     "uroman",
     "uroman-rs",
 ]
@@ -29,10 +32,14 @@ uroman-rs = { git = "https://github.com/LennartKeller/uroman-rs.git" }
 
 [dependency-groups]
 dev = [
+    "datasets>=4.2.0",
     "ipykernel>=6.30.1",
     "ipython>=9.6.0",
     "ipywidgets>=8.1.7",
     "isort>=6.1.0",
+    "pandas>=2.3.3",
     "pytest>=8.4.2",
     "ruff>=0.13.3",
 ]
+[tool.uv.extra-build-dependencies]
+    pkuseg = ["numpy"]

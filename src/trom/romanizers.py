@@ -18,7 +18,7 @@ JOINER_PUNCTUATION = set(":=/\\")
 
 
 def get_spacing_processor(
-    tokenizer: Callable[[str], list[str]],
+    tokenizer: Callable[[str], list[str]], attempt_reconstruct: bool = False
 ) -> Callable[[str], str]:
     """Returns a spacing processor that uses the provided tokenizer to add spaces around punctuation.
 
@@ -28,51 +28,56 @@ def get_spacing_processor(
     Returns:
         str: Input string with spaces added around punctuation.
     """
+    if attempt_reconstruct:
 
-    def spacing_processor(text: str) -> str:
-        words = tokenizer(text)
-        if not words:
-            return text
+        def spacing_processor(text: str) -> str:
+            words = tokenizer(text)
+            if not words:
+                return text
 
-        def string_is_only_digits(s: str) -> bool:
-            return all(char.isdigit() for char in s)
+            def string_is_only_digits(s: str) -> bool:
+                return all(char.isdigit() for char in s)
 
-        def is_joiner(s: str) -> bool:
-            return all(char in JOINER_PUNCTUATION for char in s)
+            def is_joiner(s: str) -> bool:
+                return all(char in JOINER_PUNCTUATION for char in s)
 
-        result = []
-        for i, token in enumerate(words):
-            is_punct = string_is_only_punct(token)
-            is_digit = string_is_only_digits(token)
+            result = []
+            for i, token in enumerate(words):
+                is_punct = string_is_only_punct(token)
+                is_digit = string_is_only_digits(token)
 
-            if is_punct:
-                # Check if previous token was also punctuation
-                prev_is_punct = i > 0 and string_is_only_punct(words[i - 1])
+                if is_punct:
+                    # Check if previous token was also punctuation
+                    prev_is_punct = i > 0 and string_is_only_punct(words[i - 1])
 
-                if prev_is_punct and is_joiner(token):
-                    # Joiner punctuation: attach to previous token without space
-                    result.append(token)
+                    if prev_is_punct and is_joiner(token):
+                        # Joiner punctuation: attach to previous token without space
+                        result.append(token)
 
-                if prev_is_punct:
-                    # Multiple consecutive punctuation: attach to previous
-                    result.append(token)
+                    if prev_is_punct:
+                        # Multiple consecutive punctuation: attach to previous
+                        result.append(token)
+                    else:
+                        # First punctuation after word: attach to previous word
+                        result.append(token)
+                elif is_digit:
+                    # Digits: add space before unless it's first token
+                    if i == 0:
+                        result.append(token)
+                    else:
+                        result.append(" " + token)
                 else:
-                    # First punctuation after word: attach to previous word
-                    result.append(token)
-            elif is_digit:
-                # Digits: add space before unless it's first token
-                if i == 0:
-                    result.append(token)
-                else:
-                    result.append(" " + token)
-            else:
-                # Regular word: add space before unless it's first token
-                if i == 0:
-                    result.append(token)
-                else:
-                    result.append(" " + token)
+                    # Regular word: add space before unless it's first token
+                    if i == 0:
+                        result.append(token)
+                    else:
+                        result.append(" " + token)
+            return "".join(result).strip()
+    else:
 
-        return "".join(result).strip()
+        def spacing_processor(text: str) -> str:
+            words = tokenizer(text)
+            return " ".join(words).strip()
 
     return spacing_processor
 
