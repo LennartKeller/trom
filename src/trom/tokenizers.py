@@ -55,6 +55,8 @@ def tokenize_chinese(s: str) -> list[str]:
     if _jieba is None:
         import jieba
 
+        jieba.setLogLevel(20)  # Suppress jieba logging
+
         _jieba = jieba
     return list(_jieba.cut(s))
 
