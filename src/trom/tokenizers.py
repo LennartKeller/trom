@@ -3,6 +3,7 @@ import re
 from functools import lru_cache
 from typing import Callable, Optional
 
+from .unicode import split_utf8_near_whitespace
 from .utils import get_lang_code
 
 _MosesTokenizer = None
@@ -180,11 +181,31 @@ def get_spacy_tokenizer(lang: str):
 
     tokenizer = nlp.tokenizer
 
-    def tokenize(s: str) -> list[str]:
-        f"""
-        Tokenize {lang} text using spaCy.
-        """
-        return [t.text for t in tokenizer(s) if not t.is_space]
+    if lang == "jpn":
+        # Spacy uses SudachiPy for Japanese tokenization
+        # which has a max byte limit we need to respect
+        SUDACHIPY_MAX_BYTES = 49149 - 1000
+
+        def tokenize(s: str) -> list[str]:
+            f"""
+            Tokenize {lang} text using spaCy with SudachiPy max bytes handling.
+            """
+            segments = split_utf8_near_whitespace(
+                s, max_bytes=SUDACHIPY_MAX_BYTES - 100
+            )
+            tokens = []
+            for segment in segments:
+                tokens.extend([t.text for t in nlp(segment) if not t.is_space])
+            return tokens
+
+        return tokenize
+    else:
+
+        def tokenize(s: str) -> list[str]:
+            f"""
+            Tokenize {lang} text using spaCy.
+            """
+            return [t.text for t in tokenizer(s) if not t.is_space]
 
     return tokenize
 
