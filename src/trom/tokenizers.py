@@ -12,6 +12,12 @@ _pycantonese = None
 _tokenize_khmer = None
 _tokenize_lao = None
 _tokenize_thai = None
+_sudachipy_tokenizer = None
+
+SUDACHIPY_MAX_BYTES = 49149 - 1000
+
+CHINESE_TOKENIZER_BACKEND = os.getenv("TROM_CHINESE_BACKEND", "pkuseg").lower()
+JAPANESE_TOKENIZER_BACKEND = os.getenv("TROM_JAPANESE_BACKEND", "sudachipy").lower()
 
 
 def word_tokenize(text: str) -> list[str]:
@@ -36,6 +42,28 @@ def tokenizer_khmer(s: str) -> list[str]:
     return _tokenize_khmer(s, return_tokens=True)
 
 
+def tokenize_japanese(s: str) -> list[str]:
+    """
+    Tokenize Japanese text using SudachiPy.
+    """
+    print("Using SudachiPy for Japanese tokenization.")
+
+    def _tokenize(s: str) -> list[str]:
+        global _sudachipy_tokenizer
+        if _sudachipy_tokenizer is None:
+            from sudachipy import SplitMode, dictionary
+
+            _sudachipy_tokenizer = dictionary.Dictionary().create(mode=SplitMode.A)
+        tokens = _sudachipy_tokenizer.tokenize(s)
+        return [m.surface() for m in tokens]
+
+    segments = split_utf8_near_whitespace(s, max_bytes=SUDACHIPY_MAX_BYTES - 100)
+    tokens = []
+    for segment in segments:
+        tokens.extend(_tokenize(segment))
+    return tokens
+
+
 def tokenize_cantonese(s: str) -> list[str]:
     """
     Tokenize Cantonese text using pycantonese.
@@ -48,7 +76,6 @@ def tokenize_cantonese(s: str) -> list[str]:
     return _pycantonese.segment(s)
 
 
-CHINESE_TOKENIZER_BACKEND = os.getenv("TROM_CHINESE_BACKEND", "pkuseg").lower()
 if CHINESE_TOKENIZER_BACKEND == "jieba":
     print("Using jieba for Chinese tokenization.")
     _jieba = None
@@ -184,7 +211,6 @@ def get_spacy_tokenizer(lang: str):
     if lang == "jpn":
         # Spacy uses SudachiPy for Japanese tokenization
         # which has a max byte limit we need to respect
-        SUDACHIPY_MAX_BYTES = 49149 - 1000
 
         def tokenize(s: str) -> list[str]:
             f"""
@@ -225,7 +251,9 @@ def get_tokenizer_lang_map() -> dict[str, Callable[[str], list[str]]]:
         "eng": get_moses_tokenizer(lang="en"),
         # "kor": get_moses_tokenizer(lang="ko"),
         # "jpn": get_moses_tokenizer(lang="ja"),
-        "jpn": get_spacy_tokenizer("jpn"),
+        "jpn": tokenize_japanese
+        if JAPANESE_TOKENIZER_BACKEND == "sudachipy"
+        else get_spacy_tokenizer("jpn"),
         "kor": get_spacy_tokenizer("kor"),
     }
     return LANGUAGE_TO_TOKENIZER_MAP

@@ -17,6 +17,7 @@ dependencies = [
     "pythainlp>=5.1.2",
     "sacremoses>=0.1.1",
     "spacy>=3.8.7",
+    "sudachipy>=0.6.10",
     "thulac>=0.2.2",
     "uroman",
     "uroman-rs",
