@@ -2149,7 +2149,7 @@ requires-dist = [
     { name = "jieba", specifier = ">=0.42.1" },
     { name = "khmer-nltk", specifier = ">=1.6" },
     { name = "laonlp", specifier = ">=1.2.0" },
-    { name = "numpy", specifier = ">=2.3.3" },
+    { name = "numpy", specifier = ">=1.16.0" },
     { name = "pip", specifier = ">=25.2" },
     { name = "pkuseg", specifier = ">=0.0.25" },
     { name = "pycantonese", specifier = ">=3.4.0" },
