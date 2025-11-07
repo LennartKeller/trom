@@ -2008,6 +2008,18 @@ wheels = [
 ]
 
 [[package]]
+name = "sudachidict-core"
+version = "20251022"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sudachipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/e3/65690070f1148d217dd754082195361884ac7350e3672244782b361311ac/sudachidict_core-20251022.tar.gz", hash = "sha256:2b25ffb00c7018c9d4af312f11d833fb710b680c4bfe8e3545da1e6fc18713fb", size = 9058, upload-time = "2025-11-04T02:56:20.097Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/d4/871635b678cc2cd624c3f0a26dedda4789e8a1dfaf10b7c0f517654c368d/sudachidict_core-20251022-py3-none-any.whl", hash = "sha256:ca67fe366c4cf3a35f4feef019fdb98a0c17129c66e5c0ececeae30dc318c016", size = 72164526, upload-time = "2025-11-04T03:11:26.25Z" },
+]
+
+[[package]]
 name = "sudachipy"
 version = "0.6.10"
 source = { registry = "https://pypi.org/simple" }
@@ -2138,6 +2150,7 @@ dependencies = [
     { name = "pythainlp" },
     { name = "sacremoses" },
     { name = "spacy" },
+    { name = "sudachidict-core" },
     { name = "sudachipy" },
     { name = "thulac" },
     { name = "uroman" },
@@ -2170,6 +2183,7 @@ requires-dist = [
     { name = "pythainlp", specifier = ">=5.1.2" },
     { name = "sacremoses", specifier = ">=0.1.1" },
     { name = "spacy", specifier = ">=3.8.7" },
+    { name = "sudachidict-core", specifier = ">=20251022" },
     { name = "sudachipy", specifier = ">=0.6.10" },
     { name = "thulac", specifier = ">=0.2.2" },
     { name = "uroman", git = "https://github.com/LennartKeller/uroman.git" },

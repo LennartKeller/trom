@@ -46,7 +46,6 @@ def tokenize_japanese(s: str) -> list[str]:
     """
     Tokenize Japanese text using SudachiPy.
     """
-    print("Using SudachiPy for Japanese tokenization.")
 
     def _tokenize(s: str) -> list[str]:
         global _sudachipy_tokenizer
