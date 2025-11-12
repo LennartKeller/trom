@@ -3,7 +3,7 @@ name = "trom"
 version = "0.1.0"
 description = "Romanize texts in various languages and script systems."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "click>=8.3.0",
     "iso-639>=0.4.5",
@@ -36,7 +36,7 @@ uroman-rs = { git = "https://github.com/LennartKeller/uroman-rs.git" }
 dev = [
     "datasets>=4.2.0",
     "ipykernel>=6.30.1",
-    "ipython>=9.6.0",
+    "ipython>=8.37.0",
     "ipywidgets>=8.1.7",
     "isort>=6.1.0",
     "pandas>=2.3.3",
