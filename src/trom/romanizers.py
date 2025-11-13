@@ -1,4 +1,3 @@
-import os
 import re
 import subprocess
 import sys
@@ -9,10 +8,9 @@ from typing import Callable, Literal, Optional
 import uroman as ur
 from uroman_rs import Uroman as UromanRS
 
+from .environ import ROMANIZER_CACHE_SIZE
 from .tokenizers import get_tokenizer_for_lang
 from .unicode import is_latin, string_is_only_punct
-
-TROM_CACHE_SIZE = int(os.getenv("TROM_CACHE_SIZE", "10000000"))
 
 JOINER_PUNCTUATION = set(":=/\\")
 
@@ -87,22 +85,22 @@ def get_spacing_processor_for_lang(lang: str) -> Callable[[str], str]:
     return get_spacing_processor(tokenizer)
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def _get_uroman(*args, **kwargs):
     return ur.Uroman(*args, **kwargs)
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def uromanize(s: str, lcode: Optional[str] = None) -> str:
     return _get_uroman().romanize_string(s, lcode=lcode)
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def _get_uroman_rs(*args, **kwargs):
     return UromanRS(*args, **kwargs)
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def uromanize_rs(s: str, lcode: Optional[str] = None) -> str:
     return _get_uroman_rs().romanize(s, lcode=lcode)
 
@@ -252,7 +250,7 @@ def uconv_romanize(
         raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
     if not s.strip():
         return s
@@ -411,7 +409,7 @@ class UnifiedRomanizer:
 
         return "".join(result)
 
-    @lru_cache(maxsize=TROM_CACHE_SIZE)
+    @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
         """
         Romanize a string using a two-pass approach with improved detection
@@ -452,7 +450,7 @@ class UnifiedRomanizer:
         return self.sep.join(romanized)
 
 
-@lru_cache(maxsize=TROM_CACHE_SIZE)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def get_romanizer_for_lang(
     lang: str,
     romanizer_cls: Literal["uroman", "uconv"] = "uroman",

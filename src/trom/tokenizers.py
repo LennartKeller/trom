@@ -1,8 +1,12 @@
-import os
 import re
 from functools import lru_cache
 from typing import Callable, Optional
 
+from .environ import (
+    CHINESE_TOKENIZER_BACKEND,
+    JAPANESE_TOKENIZER_BACKEND,
+    TOKENIZER_CACHE_SIZE,
+)
 from .unicode import split_utf8_near_whitespace
 from .utils import get_lang_code
 
@@ -16,9 +20,6 @@ _sudachipy_tokenizer = None
 
 SUDACHIPY_MAX_BYTES = 49149 - 1000
 
-CHINESE_TOKENIZER_BACKEND = os.getenv("TROM_CHINESE_BACKEND", "pkuseg").lower()
-JAPANESE_TOKENIZER_BACKEND = os.getenv("TROM_JAPANESE_BACKEND", "sudachipy").lower()
-
 
 def word_tokenize(text: str) -> list[str]:
     """Tokenizes text into words using a simple regex."""
@@ -30,6 +31,7 @@ def remove_whitespaces(s: str) -> str:
     return "".join(s.split())
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenizer_khmer(s: str) -> list[str]:
     """
     Tokenize Khmer text using khmernltk.
@@ -42,6 +44,7 @@ def tokenizer_khmer(s: str) -> list[str]:
     return _tokenize_khmer(s, return_tokens=True)
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenize_japanese(s: str) -> list[str]:
     """
     Tokenize Japanese text using SudachiPy.
@@ -63,6 +66,7 @@ def tokenize_japanese(s: str) -> list[str]:
     return tokens
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenize_cantonese(s: str) -> list[str]:
     """
     Tokenize Cantonese text using pycantonese.
@@ -77,8 +81,10 @@ def tokenize_cantonese(s: str) -> list[str]:
 
 if CHINESE_TOKENIZER_BACKEND == "jieba":
     print("Using jieba for Chinese tokenization.")
+
     _jieba = None
 
+    @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
     def tokenize_chinese(s: str) -> list[str]:
         """
         Tokenize Chinese text using jieba.
@@ -97,6 +103,7 @@ elif CHINESE_TOKENIZER_BACKEND == "thulac":
     print("Using thulac for Chinese tokenization.")
     _thulac = None
 
+    @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
     def tokenize_chinese(s: str) -> list[str]:
         """
         Tokenize Chinese text using thulac.
@@ -123,6 +130,7 @@ else:
         return _pkuseg.cut(s)
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenize_thai(s: str) -> list[str]:
     """
     Tokenize Thai text using pythainlp.
@@ -135,6 +143,7 @@ def tokenize_thai(s: str) -> list[str]:
     return _tokenize_thai(s)
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenize_lao(s: str) -> list[str]:
     """
     Tokenize Lao text using laonlp.
@@ -147,6 +156,7 @@ def tokenize_lao(s: str) -> list[str]:
     return _tokenize_lao(s)
 
 
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def tokenize_whitespace(s: str) -> list[str]:
     """
     Tokenize text by whitespace.
@@ -166,6 +176,7 @@ def get_moses_tokenizer(lang: Optional[str] = None) -> Callable[[str], list[str]
 
     tokenizer = _MosesTokenizer(lang=lang)
 
+    @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
     def tokenize(s: str) -> list[str]:
         return tokenizer.tokenize(s, escape=False)
 
@@ -210,7 +221,7 @@ def get_spacy_tokenizer(lang: str):
     if lang == "jpn":
         # Spacy uses SudachiPy for Japanese tokenization
         # which has a max byte limit we need to respect
-
+        @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
         def tokenize(s: str) -> list[str]:
             f"""
             Tokenize {lang} text using spaCy with SudachiPy max bytes handling.
@@ -226,6 +237,7 @@ def get_spacy_tokenizer(lang: str):
         return tokenize
     else:
 
+        @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
         def tokenize(s: str) -> list[str]:
             f"""
             Tokenize {lang} text using spaCy.
