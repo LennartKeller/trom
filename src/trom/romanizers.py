@@ -8,9 +8,17 @@ from typing import Callable, Literal, Optional
 import uroman as ur
 from uroman_rs import Uroman as UromanRS
 
-from .environ import ROMANIZER_CACHE_SIZE
+from .environ import NO_ICU, ROMANIZER_CACHE_SIZE
 from .tokenizers import get_tokenizer_for_lang
 from .unicode import is_latin, string_is_only_punct
+
+try:
+    from icu import Transliterator, UnicodeString
+
+    HAS_PYICU = True
+except ImportError:
+    HAS_PYICU = False
+
 
 JOINER_PUNCTUATION = set(":=/\\")
 
@@ -204,6 +212,63 @@ class UConvInstallationError(Exception): ...
 class UConvRomanizationError(Exception): ...
 
 
+class ICUTransliterationError(Exception): ...
+
+
+if HAS_PYICU and not NO_ICU:
+
+    @lru_cache(maxsize=128)
+    def _get_icu_transliterator(src_script: Optional[str] = None) -> Transliterator:
+        """
+        Create and cache an ICU Transliterator for a given source script.
+
+        `src_script` should be something ICU knows as a transliterator ID prefix,
+        e.g. 'Any', 'Greek', 'Cyrillic', 'Katakana', etc.
+        """
+        if not HAS_PYICU:
+            raise ICUTransliterationError(
+                "PyICU is not installed. Please `pip install PyICU`."
+            )
+
+        # This mirrors your uconv logic:
+        #   Any-Latin, optionally prefixed by e.g. Greek-Latin;Any-Latin
+        # You can stack more rules here (e.g. Latin-ASCII) if you like.
+        translit_id = "Any-Latin"
+        if src_script and src_script.lower() != "any":
+            translit_id = f"{src_script}-Latin;{translit_id}"
+
+        tr = Transliterator.createInstance(translit_id)
+        if tr is None:
+            raise ICUTransliterationError(
+                f"Could not create Transliterator '{translit_id}'"
+            )
+
+        return tr
+
+    @lru_cache(maxsize=10_000_000)
+    def icu_romanize(
+        s: str,
+        src_script: Optional[str] = None,
+    ) -> str:
+        """
+        Romanize a string using ICU Transliterator (PyICU), roughly like `uconv -x`.
+
+        Args:
+            s: Input string.
+            src_script: Optional source script (e.g. 'Greek', 'Cyrillic', 'Any').
+
+        Returns:
+            Romanized string.
+        """
+        if not s.strip():
+            return s
+
+        tr = _get_icu_transliterator(src_script)
+        us = UnicodeString(s)
+        res = tr.transliterate(us)
+        return str(res)
+
+
 @lru_cache(maxsize=10_000_000)
 def uconv_romanize(
     s: str,
@@ -304,6 +369,11 @@ class UConvRomanizer:
             raise UConvInstallationError(f"uconv not found at path: {uconv_path}")
 
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
+        if HAS_PYICU and not NO_ICU:
+            try:
+                return icu_romanize(s, src_script=src_script)
+            except ICUTransliterationError:
+                pass
         return _uconv_romanize(self, s, src_script=src_script)
 
     def __call__(self, text: str, src_script: Optional[str] = None) -> str:
