@@ -386,6 +386,8 @@ class UConvRomanizer:
             tokens = text.split(self.sep)
         romanized = [self._romanize(token, src_script=src_script) for token in tokens]
         romanized_text = self.sep.join(romanized)
+        if HAS_PYICU and not NO_ICU:
+            romanized_text = re.sub(r" +", " ", romanized_text).strip()
         romanized_text = self.postprocessor(romanized_text)
         return romanized_text
 
