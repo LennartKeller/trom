@@ -384,7 +384,14 @@ class UConvRomanizer:
             tokens = list(text)
         else:
             tokens = text.split(self.sep)
-        romanized = [self._romanize(token, src_script=src_script) for token in tokens]
+        
+        def merciful_romanize(token: str) -> str:
+            try:
+                return self._romanize(token, src_script=src_script)
+            except Exception:
+                return token
+        
+        romanized = [merciful_romanize(token) for token in tokens]
         romanized_text = self.sep.join(romanized)
         if HAS_PYICU and not NO_ICU:
             romanized_text = re.sub(r" +", " ", romanized_text).strip()
