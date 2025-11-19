@@ -217,7 +217,7 @@ class ICUTransliterationError(Exception): ...
 
 if HAS_PYICU and not NO_ICU:
 
-    @lru_cache(maxsize=128)
+    @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
     def _get_icu_transliterator(src_script: Optional[str] = None) -> Transliterator:
         """
         Create and cache an ICU Transliterator for a given source script.
@@ -245,7 +245,7 @@ if HAS_PYICU and not NO_ICU:
 
         return tr
 
-    @lru_cache(maxsize=10_000_000)
+    @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
     def icu_romanize(
         s: str,
         src_script: Optional[str] = None,
@@ -269,7 +269,7 @@ if HAS_PYICU and not NO_ICU:
         return str(res)
 
 
-@lru_cache(maxsize=10_000_000)
+@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def uconv_romanize(
     s: str,
     src_script: Optional[str] = None,
