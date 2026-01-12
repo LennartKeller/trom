@@ -1,7 +1,9 @@
 """Tests for romanizers module."""
 
 import pytest
+
 from trom.romanizers import (
+    UnifiedRomanizer,
     URomanizer,
     clean_uromanized_string,
     get_romanizer_for_lang,
@@ -10,6 +12,7 @@ from trom.romanizers import (
     uromanize_rs,
 )
 from trom.tokenizers import tokenize_whitespace
+from trom.unicode import detect_script_spans, get_script, is_latin_only
 
 
 class TestUromanizeFunctions:
@@ -355,3 +358,400 @@ class TestIntegration:
         result = romanizer(text)
         # All parts should be romanized or Latin
         assert "Hello" in result or "hello" in result.lower()
+
+
+class TestScriptDetection:
+    """Test script detection utilities."""
+
+    def test_get_script_latin(self):
+        """Test script detection for Latin characters."""
+        assert get_script("a") == "Latin"
+        assert get_script("Z") == "Latin"
+        assert get_script("é") == "Latin"
+
+    def test_get_script_cyrillic(self):
+        """Test script detection for Cyrillic characters."""
+        assert get_script("П") == "Cyrillic"
+        assert get_script("ж") == "Cyrillic"
+
+    def test_get_script_greek(self):
+        """Test script detection for Greek characters."""
+        assert get_script("Γ") == "Greek"
+        assert get_script("α") == "Greek"
+
+    def test_get_script_han(self):
+        """Test script detection for Han (Chinese) characters."""
+        assert get_script("你") == "Han"
+        assert get_script("好") == "Han"
+
+    def test_get_script_hiragana(self):
+        """Test script detection for Hiragana."""
+        assert get_script("あ") == "Hiragana"
+        assert get_script("の") == "Hiragana"
+
+    def test_get_script_katakana(self):
+        """Test script detection for Katakana."""
+        assert get_script("ア") == "Katakana"
+        assert get_script("カ") == "Katakana"
+
+    def test_get_script_hangul(self):
+        """Test script detection for Hangul (Korean)."""
+        assert get_script("안") == "Hangul"
+        assert get_script("녕") == "Hangul"
+
+    def test_get_script_arabic(self):
+        """Test script detection for Arabic."""
+        assert get_script("م") == "Arabic"
+        assert get_script("ر") == "Arabic"
+
+    def test_get_script_cherokee(self):
+        """Test script detection for Cherokee."""
+        assert get_script("Ꭰ") == "Cherokee"
+        assert get_script("Ꮧ") == "Cherokee"
+
+    def test_get_script_common(self):
+        """Test script detection for common characters."""
+        assert get_script(" ") == "Common"
+        assert get_script("1") == "Common"
+        assert get_script(".") == "Common"
+        assert get_script(",") == "Common"
+
+    def test_detect_script_spans_single_script(self):
+        """Test script span detection for single-script text."""
+        spans = detect_script_spans("Hello")
+        assert len(spans) == 1
+        assert spans[0][0] == "Latin"
+        assert spans[0][1] == 0
+        assert spans[0][2] == 5
+
+    def test_detect_script_spans_mixed(self):
+        """Test script span detection for mixed-script text."""
+        spans = detect_script_spans("Hello你好")
+        assert len(spans) == 2
+        assert spans[0][0] == "Latin"
+        assert spans[1][0] == "Han"
+
+    def test_detect_script_spans_with_punctuation(self):
+        """Test script span detection with punctuation."""
+        spans = detect_script_spans("Hello, 你好!")
+        # Common (punctuation) should be merged with adjacent scripts
+        assert len(spans) >= 2
+
+    def test_detect_script_spans_empty(self):
+        """Test script span detection for empty string."""
+        spans = detect_script_spans("")
+        assert len(spans) == 0
+
+
+class TestUnifiedRomanizer:
+    """Test UnifiedRomanizer class."""
+
+    def test_unified_romanizer_basic(self):
+        """Test basic UnifiedRomanizer initialization."""
+        romanizer = UnifiedRomanizer()
+        assert romanizer is not None
+        assert len(romanizer.backends) > 0
+
+    def test_unified_romanizer_latin_passthrough(self):
+        """Test that Latin text passes through unchanged."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello World"
+        result = romanizer(text)
+        assert result == "Hello World"
+
+    def test_unified_romanizer_cyrillic(self):
+        """Test Cyrillic romanization."""
+        romanizer = UnifiedRomanizer()
+        text = "Привет"
+        result = romanizer(text)
+        assert result != text
+        assert result.lower().startswith("p")  # Should start with 'p' for Privet
+
+    def test_unified_romanizer_greek(self):
+        """Test Greek romanization."""
+        romanizer = UnifiedRomanizer()
+        text = "Γεια"
+        result = romanizer(text)
+        assert result != text
+        # Greek Gamma can be romanized as G or Y
+        assert result[0].lower() in ("g", "y")
+
+    def test_unified_romanizer_chinese(self):
+        """Test Chinese romanization."""
+        romanizer = UnifiedRomanizer()
+        text = "你好"
+        result = romanizer(text, lcode="cmn")
+        assert result != text
+        assert len(result) > 0
+
+    def test_unified_romanizer_arabic(self):
+        """Test Arabic romanization."""
+        romanizer = UnifiedRomanizer()
+        text = "مرحبا"
+        result = romanizer(text)
+        assert result != text
+        assert len(result) > 0
+
+    def test_unified_romanizer_mixed_latin_cyrillic(self):
+        """Test mixed Latin and Cyrillic text."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello Привет"
+        result = romanizer(text)
+        assert "Hello" in result or "hello" in result.lower()
+        # Cyrillic part should be romanized
+        assert result != text
+
+    def test_unified_romanizer_mixed_latin_chinese(self):
+        """Test mixed Latin and Chinese text."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello 你好"
+        result = romanizer(text, lcode="cmn")
+        assert "Hello" in result or "hello" in result.lower()
+        # Chinese part should be romanized
+        assert result != text
+
+    def test_unified_romanizer_mixed_three_scripts(self):
+        """Test text with three different scripts."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello Привет 你好"
+        result = romanizer(text, lcode="cmn")
+        assert "Hello" in result or "hello" in result.lower()
+        # Both non-Latin parts should be romanized
+        assert result != text
+        assert len(result) > len("Hello")
+
+    def test_unified_romanizer_empty_string(self):
+        """Test empty string handling."""
+        romanizer = UnifiedRomanizer()
+        result = romanizer("")
+        assert result == ""
+
+    def test_unified_romanizer_whitespace_only(self):
+        """Test whitespace-only string."""
+        romanizer = UnifiedRomanizer()
+        result = romanizer("   ")
+        assert result == "   "
+
+    def test_unified_romanizer_with_preprocessor(self):
+        """Test UnifiedRomanizer with preprocessor."""
+
+        def preprocessor(text):
+            return text.lower()
+
+        romanizer = UnifiedRomanizer(preprocessor=preprocessor)
+        text = "HELLO WORLD"
+        result = romanizer(text)
+        assert result == "hello world"
+
+    def test_unified_romanizer_with_postprocessor(self):
+        """Test UnifiedRomanizer with postprocessor."""
+
+        def postprocessor(text):
+            return text.upper()
+
+        romanizer = UnifiedRomanizer(postprocessor=postprocessor)
+        text = "hello"
+        result = romanizer(text)
+        assert result == "HELLO"
+
+    def test_unified_romanizer_empty_separator(self):
+        """Test UnifiedRomanizer with empty separator (character-level)."""
+        romanizer = UnifiedRomanizer(sep="")
+        text = "你好"
+        result = romanizer(text, lcode="cmn")
+        assert result != text
+        assert len(result) > 0
+
+    def test_unified_romanizer_custom_separator(self):
+        """Test UnifiedRomanizer with custom separator."""
+        romanizer = UnifiedRomanizer(sep="|")
+        text = "Hello|Привет"
+        result = romanizer(text)
+        assert "|" in result
+        assert "Hello" in result
+
+    def test_unified_romanizer_backend_preference_auto(self):
+        """Test auto backend preference."""
+        romanizer = UnifiedRomanizer(backend_preference="auto")
+        assert len(romanizer.backend_preference) > 0
+
+    def test_unified_romanizer_backend_preference_uroman(self):
+        """Test uroman backend preference."""
+        romanizer = UnifiedRomanizer(backend_preference="uroman")
+        assert "uroman" in romanizer.backend_preference
+
+    def test_unified_romanizer_uroman_rust_backend(self):
+        """Test UnifiedRomanizer with Rust uroman backend."""
+        romanizer = UnifiedRomanizer(uroman_backend="rust")
+        assert "uroman" in romanizer.backends
+        text = "Привет"
+        result = romanizer(text)
+        assert result != text
+
+    def test_unified_romanizer_japanese_mixed(self):
+        """Test Japanese text with mixed scripts (Hiragana, Katakana, Kanji)."""
+        romanizer = UnifiedRomanizer(sep="")
+        text = "こんにちは"  # Hiragana
+        result = romanizer(text, lcode="jpn")
+        assert result != text
+        assert len(result) > 0
+
+    def test_unified_romanizer_korean(self):
+        """Test Korean romanization."""
+        romanizer = UnifiedRomanizer()
+        text = "안녕하세요"
+        result = romanizer(text, lcode="kor")
+        assert result != text
+        assert len(result) > 0
+
+    def test_unified_romanizer_cherokee(self):
+        """Test Cherokee romanization (ICU doesn't support, should fallback to uroman)."""
+        romanizer = UnifiedRomanizer()
+        text = "ᎠᎢᎣᎤᎥ ᎦᏬᏂᎯᏍᏗ"
+        result = romanizer(text)
+        assert result != text
+        # Cherokee should be romanized by uroman since ICU doesn't support it
+        assert "Ꭰ" not in result
+        assert len(result) > 0
+
+    def test_unified_romanizer_punctuation_preserved(self):
+        """Test that punctuation is preserved."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello, world!"
+        result = romanizer(text)
+        assert "," in result
+        assert "!" in result
+
+    def test_unified_romanizer_numbers_preserved(self):
+        """Test that numbers are preserved."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello 123 world"
+        result = romanizer(text)
+        assert "123" in result
+
+    def test_unified_romanizer_verbose_mode(self):
+        """Test UnifiedRomanizer with verbose mode."""
+        romanizer = UnifiedRomanizer(verbose=True)
+        assert romanizer.verbose is True
+        # Just ensure it doesn't crash
+        text = "Hello"
+        result = romanizer(text)
+        assert result == "Hello"
+    
+    def test_unified_romanizer_interleaved_scripts(self):
+        """Test UnifiedRomanizer with interleaved scripts."""
+        romanizer = UnifiedRomanizer()
+        text = """
+ᎠᎢᎣᎤᎥ 今天天气很好 một ngày tồi tệ ᎦᏬᏂᎯᏍᏗ. だけど、世界和平 những ngôi sao xa xôi ᎡᎶᎯ ᎢᎦ. 繁荣昌盛 sự phát triển bền vững ᎣᏍᏓ ᏑᎾᎴᎢ 图书馆. ᏫᏥᎦᎵᎡᎵᎦ cái cây xanh 电脑 互相理解.
+
+ᎾᎿᎢ ᎢᏳᏍᏗ 我们去哪儿? Con đường dài ᎡᎵᏍᏗ ᎪᎯ ᎢᎦ. 苹果和橘子 hạnh phúc là gì ᏍᎩ ᏗᏕᎶᏆᏍᏗ. 什么是爱 không biết nữa ᏣᎳᎩ. 天地玄黄 những giấc mơ kỳ lạ ᎾᏍᎩ ᎢᏳᏍᏗ.
+
+ᎣᏍᏓ ᎢᎦ 早上好 tạm biệt nhé ᎦᎵᎡᎵᎦ. 语言障碍 khó khăn chồng chất ᎡᎶᎯ. 飞机场 ở đâu đó ᏑᎾᎴᎢ. 很高兴认识你 rất vui được gặp bạn ᏫᏥᎦᎵᎡᎵᎦ.
+"""
+        result = romanizer(text)
+        assert is_latin_only(result)
+
+
+class TestGetRomanizerForLangUnified:
+    """Test get_romanizer_for_lang with unified romanizer."""
+
+    def test_get_unified_romanizer(self):
+        """Test getting a unified romanizer."""
+        romanizer = get_romanizer_for_lang("eng", romanizer_cls="unified")
+        assert isinstance(romanizer, UnifiedRomanizer)
+
+    def test_unified_romanizer_with_aggressive_preprocessor(self):
+        """Test unified romanizer with aggressive preprocessor."""
+        romanizer = get_romanizer_for_lang(
+            "eng", romanizer_cls="unified", preprocessor="aggressive"
+        )
+        text = "HELLO   WORLD"
+        result = romanizer(text)
+        assert result.islower() or not result.isalpha()
+
+    def test_unified_romanizer_with_tokenize_preprocessor(self):
+        """Test unified romanizer with tokenize preprocessor."""
+        romanizer = get_romanizer_for_lang(
+            "eng", romanizer_cls="unified", preprocessor="tokenize"
+        )
+        text = "hello world"
+        result = romanizer(text)
+        assert result is not None
+
+    def test_unified_romanizer_with_aggressive_postprocessor(self):
+        """Test unified romanizer with aggressive postprocessor."""
+        romanizer = get_romanizer_for_lang(
+            "eng", romanizer_cls="unified", postprocessor="aggressive"
+        )
+        text = "Hello, World!"
+        result = romanizer(text)
+        assert result.islower()
+        assert "," not in result
+
+    def test_unified_romanizer_chinese_config(self):
+        """Test unified romanizer with Chinese language config."""
+        romanizer = get_romanizer_for_lang("cmn", romanizer_cls="unified")
+        # Should have empty separator for Chinese
+        assert romanizer.sep == ""
+
+    def test_unified_romanizer_japanese_config(self):
+        """Test unified romanizer with Japanese language config."""
+        romanizer = get_romanizer_for_lang("jpn", romanizer_cls="unified")
+        # Should have empty separator for Japanese
+        assert romanizer.sep == ""
+
+    def test_unified_romanizer_caching(self):
+        """Test that get_romanizer_for_lang caches unified romanizers."""
+        romanizer1 = get_romanizer_for_lang("eng", romanizer_cls="unified")
+        romanizer2 = get_romanizer_for_lang("eng", romanizer_cls="unified")
+        # Should be the same object due to caching
+        assert romanizer1 is romanizer2
+
+
+class TestUnifiedRomanizerEdgeCases:
+    """Test edge cases and error handling for UnifiedRomanizer."""
+
+    def test_unified_romanizer_only_punctuation(self):
+        """Test text with only punctuation."""
+        romanizer = UnifiedRomanizer()
+        text = "... !!! ???"
+        result = romanizer(text)
+        # Should pass through unchanged
+        assert result == text
+
+    def test_unified_romanizer_mixed_with_numbers(self):
+        """Test mixed script text with numbers."""
+        romanizer = UnifiedRomanizer()
+        text = "abc123你好456xyz"
+        result = romanizer(text, lcode="cmn")
+        # Latin and numbers should be preserved
+        assert "abc" in result or "ABC" in result.lower()
+        assert "123" in result
+        assert "456" in result
+        assert "xyz" in result or "XYZ" in result.lower()
+
+    def test_unified_romanizer_consecutive_spaces(self):
+        """Test that consecutive spaces are handled properly."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello    World"
+        result = romanizer(text)
+        # Spaces should be normalized
+        assert "Hello" in result
+        assert "World" in result
+
+    def test_unified_romanizer_newlines(self):
+        """Test text with newlines."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello\nWorld"
+        result = romanizer(text)
+        # Should handle newlines gracefully
+        assert "Hello" in result or "hello" in result.lower()
+        assert "World" in result or "world" in result.lower()
+
+    def test_unified_romanizer_tabs(self):
+        """Test text with tabs."""
+        romanizer = UnifiedRomanizer()
+        text = "Hello\tWorld"
+        result = romanizer(text)
+        assert "Hello" in result or "hello" in result.lower()
+        assert "World" in result or "world" in result.lower()

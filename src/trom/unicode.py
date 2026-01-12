@@ -70,8 +70,181 @@ def is_latin(char):
     return False
 
 
+def is_latin_only(text):
+    for char in text:
+        # Get the formal Unicode name (e.g., 'LATIN SMALL LETTER A')
+        try:
+            name = unicodedata.name(char)
+        except ValueError:
+            # Characters with no name (like some control codes) are usually not Latin
+            continue
+
+        # We allow numbers, punctuation, and symbols regardless of "script"
+        # Categories: 'P' (Punctuation), 'N' (Number), 'Z' (Separator/Space), 'S' (Symbol)
+        category = unicodedata.category(char)
+        if category[0] in ("P", "N", "Z", "S"):
+            continue
+
+        # Check if the character is a Letter ('L') and specifically 'LATIN'
+        if category.startswith("L"):
+            if "LATIN" not in name:
+                return False
+
+    return True
+
+
 def utf8len(s: str) -> int:
     return len(s.encode("utf-8"))
+
+
+def get_script(char: str) -> str:
+    """
+    Detect the Unicode script of a character.
+
+    Args:
+        char: A single character to detect script for.
+
+    Returns:
+        str: Script name (e.g., 'Latin', 'Cyrillic', 'Han', 'Arabic', etc.)
+             Returns 'Common' for punctuation and symbols.
+             Returns 'Unknown' if script cannot be determined.
+    """
+    if len(char) != 1:
+        raise ValueError("get_script() expects a single character")
+
+    # Handle whitespace and basic ASCII
+    if char.isspace():
+        return "Common"
+
+    code_point = ord(char)
+
+    # Common punctuation and symbols
+    if char_is_punct(char) or unicodedata.category(char) in ("Sm", "Sc", "Sk", "So"):
+        return "Common"
+
+    # Digits
+    if char.isdigit():
+        return "Common"
+
+    # Use Unicode name to detect script for letters
+    try:
+        name = unicodedata.name(char)
+
+        # Common scripts
+        if "LATIN" in name:
+            return "Latin"
+        elif "CYRILLIC" in name:
+            return "Cyrillic"
+        elif "GREEK" in name:
+            return "Greek"
+        elif "ARABIC" in name:
+            return "Arabic"
+        elif "HEBREW" in name:
+            return "Hebrew"
+        elif "DEVANAGARI" in name:
+            return "Devanagari"
+        elif "THAI" in name:
+            return "Thai"
+        elif "HANGUL" in name or "JONGSEONG" in name or "CHOSEONG" in name:
+            return "Hangul"
+        elif "HIRAGANA" in name:
+            return "Hiragana"
+        elif "KATAKANA" in name:
+            return "Katakana"
+        elif "CJK" in name or "IDEOGRAPH" in name:
+            return "Han"
+        elif "KHMER" in name:
+            return "Khmer"
+        elif "LAO" in name:
+            return "Lao"
+        elif "MYANMAR" in name:
+            return "Myanmar"
+        elif "TIBETAN" in name:
+            return "Tibetan"
+        elif "GEORGIAN" in name:
+            return "Georgian"
+        elif "ARMENIAN" in name:
+            return "Armenian"
+        elif "ETHIOPIC" in name:
+            return "Ethiopic"
+        elif "CHEROKEE" in name:
+            return "Cherokee"
+
+    except ValueError:
+        pass
+
+    # Fallback: use code point ranges for CJK and other scripts
+    # CJK Unified Ideographs
+    if 0x4E00 <= code_point <= 0x9FFF:
+        return "Han"
+    # CJK Extension A
+    elif 0x3400 <= code_point <= 0x4DBF:
+        return "Han"
+    # Hiragana
+    elif 0x3040 <= code_point <= 0x309F:
+        return "Hiragana"
+    # Katakana
+    elif 0x30A0 <= code_point <= 0x30FF:
+        return "Katakana"
+    # Hangul Syllables
+    elif 0xAC00 <= code_point <= 0xD7AF:
+        return "Hangul"
+    # Cherokee
+    elif 0x13A0 <= code_point <= 0x13FF:
+        return "Cherokee"
+
+    return "Unknown"
+
+
+def detect_script_spans(text: str) -> List[tuple[str, int, int]]:
+    """
+    Detect spans of different scripts in text.
+
+    Args:
+        text: Input text to analyze.
+
+    Returns:
+        List of tuples (script, start_idx, end_idx) where each tuple represents
+        a continuous span of characters belonging to the same script.
+        'Common' script characters are merged with adjacent non-Common scripts.
+    """
+    if not text:
+        return []
+
+    spans = []
+    current_script = None
+    start_idx = 0
+
+    for i, char in enumerate(text):
+        script = get_script(char)
+
+        if current_script is None:
+            current_script = script
+            start_idx = i
+        elif script != current_script and script != "Common":
+            # End current span and start new one
+            # But first, extend previous span if it was Common
+            if current_script == "Common" and spans:
+                # Merge with previous span
+                prev_script, prev_start, _ = spans[-1]
+                spans[-1] = (prev_script, prev_start, i)
+            else:
+                spans.append((current_script, start_idx, i))
+            current_script = script
+            start_idx = i
+        # If new char is Common, we don't change current_script
+        # (Common chars are attached to their context)
+
+    # Add final span
+    if current_script is not None:
+        if current_script == "Common" and spans:
+            # Merge with previous span
+            prev_script, prev_start, _ = spans[-1]
+            spans[-1] = (prev_script, prev_start, len(text))
+        else:
+            spans.append((current_script, start_idx, len(text)))
+
+    return spans
 
 
 def get_unicode_codepoints(s: str, as_hex: bool = True):

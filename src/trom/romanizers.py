@@ -10,7 +10,7 @@ from uroman_rs import Uroman as UromanRS
 
 from .environ import NO_ICU, ROMANIZER_CACHE_SIZE
 from .tokenizers import get_tokenizer_for_lang
-from .unicode import is_latin, string_is_only_punct
+from .unicode import string_is_only_punct
 
 try:
     from icu import Transliterator, UnicodeString
@@ -384,13 +384,13 @@ class UConvRomanizer:
             tokens = list(text)
         else:
             tokens = text.split(self.sep)
-        
+
         def merciful_romanize(token: str) -> str:
             try:
                 return self._romanize(token, src_script=src_script)
             except Exception:
                 return token
-        
+
         romanized = [merciful_romanize(token) for token in tokens]
         romanized_text = self.sep.join(romanized)
         if HAS_PYICU and not NO_ICU:
@@ -400,158 +400,279 @@ class UConvRomanizer:
 
 
 class UnifiedRomanizer:
-    def __init__(self, sep: str = " ", uconv_path: str = "uconv", verbose: bool = True):
+    """
+    A unified romanizer that dynamically selects between ICU/uconv and uroman backends.
+
+    This romanizer uses a simple heuristic:
+    1. Try ICU/uconv first (preferred for all scripts when available)
+    2. If ICU/uconv returns text unchanged (doesn't support the script), fallback to uroman
+    3. If uroman also returns unchanged, return original text (merciful mode)
+
+    This approach is much simpler than explicit script detection and works well because:
+    - ICU handles most common scripts (Cyrillic, Greek, Arabic, CJK, etc.)
+    - uroman fills in gaps for scripts ICU doesn't support (e.g., Cherokee)
+    - No complex script detection logic needed
+
+    Args:
+        preprocessor: Optional preprocessing function applied before romanization
+        postprocessor: Optional postprocessing function applied after romanization
+        sep: Separator used for tokenization (default: " ")
+        backend_preference: Preferred backend order ("auto", "icu", "uconv", "uroman")
+        uroman_backend: Which uroman implementation to use ("python" or "rust")
+        uconv_path: Path to uconv executable
+        verbose: Whether to print warnings and debug info
+        **uroman_kwargs: Additional kwargs passed to URomanizer
+
+    Attributes:
+        backends: Dictionary mapping backend names to romanizer instances
+        backend_preference: List of backends to try in order
+    """
+
+    def __init__(
+        self,
+        preprocessor: Optional[Callable[[str], str]] = None,
+        postprocessor: Optional[Callable[[str], str]] = None,
+        sep: str = " ",
+        backend_preference: Literal["auto", "icu", "uconv", "uroman"] = "auto",
+        uroman_backend: Literal["python", "rust"] = "python",
+        uconv_path: str = "uconv",
+        verbose: bool = False,
+        **uroman_kwargs,
+    ):
+        self.preprocessor = preprocessor or (lambda x: x)
+        self.postprocessor = postprocessor or (lambda x: x)
         self.sep = sep
-        self.uconv_romanizer = UConvRomanizer(uconv_path=uconv_path, verbose=verbose)
-        self.uroman_romanizer = URomanizer()
+        self.verbose = verbose
 
-    def _is_latin(self, char: str) -> bool:
-        """Check if a character belongs to the Latin script."""
+        # Initialize available backends
+        self.backends = {}
+        self._init_backends(uroman_backend, uconv_path, uroman_kwargs)
+
+        # Determine backend preference order
+        if backend_preference == "auto":
+            # Default order: ICU > uconv > uroman
+            self.backend_preference = []
+            if "icu" in self.backends:
+                self.backend_preference.append("icu")
+            elif "uconv" in self.backends:
+                self.backend_preference.append("uconv")
+            if "uroman" in self.backends:
+                self.backend_preference.append("uroman")
+        else:
+            # User specified preference
+            self.backend_preference = [backend_preference]
+
+        if not self.backends:
+            raise RuntimeError(
+                "No romanization backends available. Install PyICU, uconv, or uroman."
+            )
+
+        if self.verbose:
+            print(
+                f"UnifiedRomanizer initialized with backends: {list(self.backends.keys())}"
+            )
+            print(f"Backend preference: {self.backend_preference}")
+
+    def _init_backends(
+        self,
+        uroman_backend: Literal["python", "rust"],
+        uconv_path: str,
+        uroman_kwargs: dict,
+    ):
+        """Initialize available romanization backends by reusing existing romanizer classes."""
+        # Try to initialize UConvRomanizer (handles both ICU and uconv)
         try:
-            return unicodedata.name(char).startswith(("LATIN", "SPACE", "PUNCTUATION"))
-        except ValueError:
-            return False
+            uconv_romanizer = UConvRomanizer(
+                preprocessor=None,  # We handle pre/post processing at unified level
+                postprocessor=None,
+                uconv_path=uconv_path,
+                verbose=False,  # Suppress UConvRomanizer's own verbose output
+            )
+            # UConvRomanizer._romanize uses ICU if available, otherwise uconv
+            self.backends["icu"] = uconv_romanizer
+            if self.verbose:
+                if HAS_PYICU and not NO_ICU:
+                    print("ICU (PyICU) backend available")
+                else:
+                    print(f"uconv backend available at {uconv_path}")
+        except UConvInstallationError:
+            if self.verbose:
+                print("Neither ICU nor uconv available")
 
-    def _find_unromanized_regions(
-        self, original: str, romanized: str
-    ) -> list[tuple[int, int]]:
-        """
-        Find regions in the text that weren't properly romanized by analyzing
-        the character properties of the romanized output.
-        """
-        if not romanized or romanized == original:
-            return [(0, len(original))]
+        # Initialize uroman backend (always available as fallback)
+        try:
+            self.backends["uroman"] = URomanizer(
+                preprocessor=None,  # We handle pre/post processing at unified level
+                postprocessor=None,
+                backend=uroman_backend,
+                **uroman_kwargs,
+            )
+            if self.verbose:
+                print(f"uroman backend available ({uroman_backend} implementation)")
+        except Exception as e:
+            if self.verbose:
+                print(f"uroman backend initialization failed: {e}")
 
-        # Check if the romanized text contains only Latin characters and basic punctuation
-        if all(self._is_latin(c) for c in romanized):
-            return []
-
-        # If we still have non-Latin characters, find those regions
-        regions = []
-        start = None
-
-        for i, char in enumerate(romanized):
-            if not self._is_latin(char):
-                if start is None:
-                    start = i
-            elif start is not None:
-                regions.append((start, i))
-                start = None
-
-        if start is not None:
-            regions.append((start, len(romanized)))
-
-        # Convert regions in romanized text to regions in original text
-        original_regions = []
-        pos = 0
-        for start, end in regions:
-            # Find corresponding position in original text
-            while pos < len(original) and len(romanized[:start]) > len(original[:pos]):
-                pos += 1
-            region_start = pos
-
-            while pos < len(original) and len(romanized[:end]) > len(original[:pos]):
-                pos += 1
-            region_end = pos
-
-            if region_end > region_start:
-                original_regions.append((region_start, region_end))
-
-        return original_regions
-
-    def _merge_romanizations(
-        self, original: str, first_pass: str, regions: list[tuple[int, int]]
+    def _romanize_with_backend(
+        self, text: str, backend: str, lcode: Optional[str] = None
     ) -> str:
+        """Romanize text using specified backend romanizer."""
+        romanizer = self.backends[backend]
+
+        if backend == "icu":
+            # UConvRomanizer instance - call its _romanize method
+            return romanizer._romanize(text, src_script=None)
+        elif backend == "uroman":
+            # URomanizer instance - call its _romanize method
+            return romanizer._romanize(text, lcode=lcode)
+        else:
+            raise ValueError(f"Unknown backend: {backend}")
+
+    def _has_non_latin_letters(self, text: str) -> bool:
+        """Check if text contains non-Latin letters (excluding punctuation, numbers, spaces)."""
+        for char in text:
+            category = unicodedata.category(char)
+            # Only check letters (L*)
+            if category.startswith("L"):
+                # Check if it's a Latin letter
+                try:
+                    name = unicodedata.name(char)
+                    if "LATIN" not in name:
+                        return True
+                except ValueError:
+                    # Character has no name, consider it non-Latin
+                    return True
+        return False
+
+    def _romanize_text(self, text: str, lcode: Optional[str] = None) -> str:
+        """Romanize text using available backends.
+
+        Strategy:
+        1. Try ICU/uconv first (preferred)
+        2. If ICU/uconv leaves non-Latin letters, fallback to uroman
+        3. If uroman also leaves non-Latin letters, return the best available result (merciful mode)
         """
-        Merge the first-pass romanization with additional romanization of unromanized regions.
+        if not text.strip():
+            return text
+
+        icu_result = None
+
+        # Try ICU/uconv backends first (preferred for all scripts)
+        for backend in self.backend_preference:
+            if backend == "uroman":
+                continue  # Skip uroman, save it for fallback
+            if backend in self.backends:
+                try:
+                    result = self._romanize_with_backend(text, backend, lcode=lcode)
+                    # Save result for potential fallback
+                    icu_result = result
+
+                    # Check if romanization is complete (no non-Latin letters remain)
+                    if not self._has_non_latin_letters(result):
+                        # Fully romanized, use this result
+                        return result
+                    else:
+                        # ICU partially romanized but non-Latin letters remain
+                        if self.verbose:
+                            print(f"{backend} left non-Latin characters, trying uroman")
+                        break
+                except Exception as e:
+                    if self.verbose:
+                        print(f"{backend} failed: {e}, trying next backend")
+                    continue
+
+        # Fallback to uroman if ICU/uconv didn't fully romanize
+        if "uroman" in self.backends:
+            try:
+                result = self._romanize_with_backend(text, "uroman", lcode=lcode)
+                # Use uroman result if it's better (more romanized)
+                if not self._has_non_latin_letters(result):
+                    return result
+                # If uroman also didn't fully romanize, prefer uroman result anyway
+                # (it might handle scripts ICU missed)
+                if icu_result is None or self._has_non_latin_letters(icu_result):
+                    return result
+            except Exception as e:
+                if self.verbose:
+                    print(f"uroman fallback failed: {e}")
+
+        # Return ICU result if we have it, otherwise return original (merciful mode)
+        return icu_result if icu_result is not None else text
+
+    def __call__(self, text: str, lcode: Optional[str] = None) -> str:
         """
-        if not regions:
-            return first_pass
+        Romanize text using ICU/uconv first, with uroman as fallback.
 
-        result = []
-        last_end = 0
+        Args:
+            text: Input text to romanize (may contain mixed scripts)
+            lcode: Optional language code (used for CJK languages with uroman)
 
-        for start, end in regions:
-            # Add the successfully romanized portion before this region
-            result.append(first_pass[last_end:start])
-
-            # Romanize the unromanized region using uroman
-            unromanized_part = original[start:end]
-            uroman_result = self.uroman_romanizer(unromanized_part)
-            result.append(uroman_result)
-
-            last_end = end
-
-        # Add any remaining romanized portion
-        if last_end < len(first_pass):
-            result.append(first_pass[last_end:])
-
-        return "".join(result)
-
-    @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
-    def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
+        Returns:
+            Romanized text
         """
-        Romanize a string using a two-pass approach with improved detection
-        of unromanized regions.
-        """
-        if not s.strip():
-            return s
+        if not text.strip():
+            return text
 
-        # First pass: try uconv
-        try:
-            first_pass = self.uconv_romanizer(s, src_script=src_script)
-        except UConvRomanizationError:
-            first_pass = s
+        # Apply preprocessing
+        text = self.preprocessor(text)
 
-        # Find regions that weren't properly romanized
-        unromanized_regions = self._find_unromanized_regions(s, first_pass)
+        # Handle separator-based tokenization
+        if self.sep == "":
+            # Character-by-character mode - romanize entire text at once
+            romanized_text = self._romanize_text(text, lcode=lcode)
+        else:
+            # Token-based mode with separator
+            tokens = text.split(self.sep)
+            romanized_tokens = []
 
-        # If nothing was romanized or everything needs to be re-romanized, use uroman
-        if not unromanized_regions or (
-            len(unromanized_regions) == 1 and unromanized_regions[0] == (0, len(s))
-        ):
-            return self.uroman_romanizer(s)
+            for token in tokens:
+                if not token.strip():
+                    romanized_tokens.append(token)
+                    continue
 
-        # Merge the results of both romanization passes
-        romanized = self._merge_romanizations(s, first_pass, unromanized_regions)
-        # Last pass go over every character and uromanize every non ascii character (diacritics are allowed)
-        final = []
-        for char in romanized:
-            if not is_latin(char) or char.isspace():
-                final.append(self.uroman_romanizer(char))
-            else:
-                final.append(char)
-        return "".join(final)
+                # Romanize each token
+                romanized = self._romanize_text(token, lcode=lcode)
+                romanized_tokens.append(romanized)
 
-    def __call__(self, text: str, src_script: Optional[str] = None) -> str:
-        tokens = text.split(self.sep)
-        romanized = [self._romanize(token, src_script=src_script) for token in tokens]
-        return self.sep.join(romanized)
+            romanized_text = self.sep.join(romanized_tokens)
+
+        # Clean up multiple spaces if using ICU/uconv
+        if "icu" in self.backends or "uconv" in self.backends:
+            romanized_text = re.sub(r" +", " ", romanized_text).strip()
+
+        # Apply postprocessing
+        romanized_text = self.postprocessor(romanized_text)
+
+        return romanized_text
 
 
 @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
 def get_romanizer_for_lang(
     lang: str,
-    romanizer_cls: Literal["uroman", "uconv"] = "uroman",
+    romanizer_cls: Literal["uroman", "uconv", "unified"] = "uroman",
     preprocessor: Optional[
         Callable[[str], str] | Literal["aggressive", "tokenize"]
     ] = None,
     postprocessor: Optional[Callable[[str], str] | Literal["aggressive"]] = None,
     **romanizer_kwargs,
-) -> URomanizer | UConvRomanizer:
+) -> URomanizer | UConvRomanizer | UnifiedRomanizer:
     """
-    Gets a URomanizer or UConvRomanizer instance configured for the specified language.
+    Gets a URomanizer, UConvRomanizer, or UnifiedRomanizer instance configured for the specified language.
     This function sets up a romanizer with a language specific pre-processing function.
 
     Args:
         lang (str): Language code (e.g., 'en', 'de', 'zh').
+        romanizer_cls (str): Romanizer class to use ('uroman', 'uconv', or 'unified').
+        preprocessor: Optional preprocessing function or preset ('aggressive', 'tokenize').
+        postprocessor: Optional postprocessing function or preset ('aggressive').
+        **romanizer_kwargs: Additional kwargs passed to the romanizer constructor.
 
     Returns:
-        URomanizer: Configured URomanizer instance.
+        URomanizer | UConvRomanizer | UnifiedRomanizer: Configured romanizer instance.
     """
-    if romanizer_cls not in ("uroman", "uconv"):
+    if romanizer_cls not in ("uroman", "uconv", "unified"):
         raise ValueError(
-            f"Invalid romanizer_cls: {romanizer_cls}. Choose 'uroman' or 'uconv'."
+            f"Invalid romanizer_cls: {romanizer_cls}. Choose 'uroman', 'uconv', or 'unified'."
         )
 
     tokenizer = get_tokenizer_for_lang(lang)
@@ -594,8 +715,14 @@ def get_romanizer_for_lang(
             postprocessor=postprocessor,
             **romanizer_kwargs,
         )
-    else:
+    elif romanizer_cls == "uconv":
         romanizer = UConvRomanizer(
+            preprocessor=preprocessor,
+            postprocessor=postprocessor,
+            **romanizer_kwargs,
+        )
+    else:  # unified
+        romanizer = UnifiedRomanizer(
             preprocessor=preprocessor,
             postprocessor=postprocessor,
             **romanizer_kwargs,

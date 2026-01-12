@@ -8,7 +8,7 @@ wb*
 __pycache__/
 *.py[codz]
 *$py.class
-
+*.xlsx
 # C extensions
 *.so
 
