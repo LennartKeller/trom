@@ -3322,8 +3322,8 @@ requires-dist = [
     { name = "sudachidict-core", specifier = ">=20251022" },
     { name = "sudachipy", specifier = ">=0.6.10" },
     { name = "thulac", specifier = ">=0.2.2" },
-    { name = "uroman", git = "https://github.com/LennartKeller/uroman.git" },
-    { name = "uroman-rs", git = "https://github.com/LennartKeller/uroman-rs.git" },
+    { name = "uroman", git = "https://github.com/LennartKeller/uroman.git?branch=master" },
+    { name = "uroman-rs", git = "https://github.com/LennartKeller/uroman-rs.git?branch=master" },
 ]
 
 [package.metadata.requires-dev]
@@ -3394,7 +3394,7 @@ wheels = [
 [[package]]
 name = "uroman"
 version = "1.3.1.1"
-source = { git = "https://github.com/LennartKeller/uroman.git#0d92c2cac55f3f73192323f2838f69281d2ac957" }
+source = { git = "https://github.com/LennartKeller/uroman.git?branch=master#0d92c2cac55f3f73192323f2838f69281d2ac957" }
 dependencies = [
     { name = "regex" },
 ]
@@ -3402,7 +3402,7 @@ dependencies = [
 [[package]]
 name = "uroman-rs"
 version = "0.6.2"
-source = { git = "https://github.com/LennartKeller/uroman-rs.git#bd5866a1e844472497917c97c59831a4d8519e2c" }
+source = { git = "https://github.com/LennartKeller/uroman-rs.git?branch=master#b9a21d14f87125c9c4ff3f44d0142cef6581fe49" }
 dependencies = [
     { name = "maturin" },
     { name = "pytest" },
