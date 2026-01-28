@@ -23,6 +23,9 @@ except ImportError:
 JOINER_PUNCTUATION = set(":=/\\")
 
 
+class TromRomanizer: ...
+
+
 def get_spacing_processor(
     tokenizer: Callable[[str], list[str]], attempt_reconstruct: bool = False
 ) -> Callable[[str], str]:
@@ -113,7 +116,7 @@ def uromanize_rs(s: str, lcode: Optional[str] = None) -> str:
     return _get_uroman_rs().romanize(s, lcode=lcode)
 
 
-class URomanizer:
+class URomanizer(TromRomanizer):
     def __init__(
         self,
         preprocessor: Optional[Callable[[str], str]] = None,
@@ -326,7 +329,7 @@ def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
     return romanized
 
 
-class UConvRomanizer:
+class UConvRomanizer(TromRomanizer):
     """
     A class to handle romanization of text using the ICU uconv utility.
     Supports caching of results and custom separation of input text.
@@ -399,7 +402,7 @@ class UConvRomanizer:
         return romanized_text
 
 
-class UnifiedRomanizer:
+class UnifiedRomanizer(TromRomanizer):
     """
     A unified romanizer that dynamically selects between ICU/uconv and uroman backends.
 
