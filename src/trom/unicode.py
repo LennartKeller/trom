@@ -333,3 +333,9 @@ def split_utf8_near_whitespace(text: str, max_bytes: int = 49149 - 100) -> List[
     # Remove any empty strings (could occur if text is all whitespace)
     assert all(utf8len(p) <= max_bytes for p in parts)
     return [p for p in parts if p]
+
+
+def remove_diacritics(text: str) -> str:
+    """Remove all diacritics (combining characters) from a string."""
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
