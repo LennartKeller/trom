@@ -335,7 +335,29 @@ def split_utf8_near_whitespace(text: str, max_bytes: int = 49149 - 100) -> List[
     return [p for p in parts if p]
 
 
+EXTRA_MAP = str.maketrans(
+    {
+        "ß": "ss",
+        "ẞ": "SS",
+        "ł": "l",
+        "Ł": "L",
+        "ø": "o",
+        "Ø": "O",
+        "đ": "d",
+        "Đ": "D",
+        "ð": "d",
+        "Ð": "D",
+        "þ": "th",
+        "Þ": "Th",
+        "æ": "ae",
+        "Æ": "AE",
+        "œ": "oe",
+        "Œ": "OE",
+    }
+)
+
+
 def remove_diacritics(text: str) -> str:
-    """Remove all diacritics (combining characters) from a string."""
+    text = text.translate(EXTRA_MAP)
     normalized = unicodedata.normalize("NFD", text)
-    return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
