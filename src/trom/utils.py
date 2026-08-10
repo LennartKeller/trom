@@ -13,25 +13,30 @@ def get_lang_code(
     if split_on_dash:
         lang = lang.split("-")[0]
 
+    language = None
     if len(lang) == 3:
         for p in ("part2b", "part2t", "part3"):
-            l = None
             try:
-                l = languages.get(**{p: lang})
+                language = languages.get(**{p: lang})
+                break
             except KeyError:
                 continue
     elif len(lang) == 2:
-        l = languages.get(part1=lang)
+        try:
+            language = languages.get(part1=lang)
+        except KeyError:
+            language = None
     elif len(lang) > 3:
-        l = languages.get(name=lang)
-    else:
-        l = None
+        try:
+            language = languages.get(name=lang)
+        except KeyError:
+            language = None
 
     what = what.lower()
     if what != "full":
-        result = getattr(l, what, None)
+        result = getattr(language, what, None)
     else:
-        result = l
+        result = language
 
     if result is None:
         raise ValueError(f"Language code '{lang}' not found in ISO 639-1/2/3.")

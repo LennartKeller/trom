@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from functools import lru_cache
 from typing import List
 
 
@@ -40,9 +41,46 @@ def string_contains_punct(s: str) -> bool:
     return any(char_is_punct(char) for char in s)
 
 
-def get_puntuation(s: str) -> str:
+def get_punctuation(s: str) -> str:
     """Returns all punctuation characters in a string."""
     return "".join(char for char in s if char_is_punct(char))
+
+
+# Deprecated alias kept for backwards compatibility.
+get_puntuation = get_punctuation
+
+
+@lru_cache(maxsize=None)  # Bounded by the number of distinct Unicode characters
+def char_is_latin_letter(char: str) -> bool:
+    """
+    Check if a single character is a letter of the Latin script.
+    Non-letter characters (digits, punctuation, spaces, ...) return False.
+    """
+    if not unicodedata.category(char).startswith("L"):
+        return False
+    try:
+        return "LATIN" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+@lru_cache(maxsize=None)
+def _char_is_non_latin_letter(char: str) -> bool:
+    if not unicodedata.category(char).startswith("L"):
+        return False
+    try:
+        return "LATIN" not in unicodedata.name(char)
+    except ValueError:
+        # Character has no name, consider it non-Latin
+        return True
+
+
+def contains_non_latin_letters(text: str) -> bool:
+    """
+    Check if text contains letters of a non-Latin script.
+    Punctuation, digits, symbols, and whitespace are ignored.
+    """
+    return any(_char_is_non_latin_letter(char) for char in text)
 
 
 def is_latin(char):
@@ -60,37 +98,15 @@ def is_latin(char):
     """
     if len(char) != 1:
         return all(is_latin(c) for c in char)
-    category = unicodedata.category(char)
-    if category.startswith("L"):
-        try:
-            name = unicodedata.name(char)
-            return "LATIN" in name
-        except ValueError:
-            return False
-    return False
+    return char_is_latin_letter(char)
 
 
 def is_latin_only(text):
-    for char in text:
-        # Get the formal Unicode name (e.g., 'LATIN SMALL LETTER A')
-        try:
-            name = unicodedata.name(char)
-        except ValueError:
-            # Characters with no name (like some control codes) are usually not Latin
-            continue
-
-        # We allow numbers, punctuation, and symbols regardless of "script"
-        # Categories: 'P' (Punctuation), 'N' (Number), 'Z' (Separator/Space), 'S' (Symbol)
-        category = unicodedata.category(char)
-        if category[0] in ("P", "N", "Z", "S"):
-            continue
-
-        # Check if the character is a Letter ('L') and specifically 'LATIN'
-        if category.startswith("L"):
-            if "LATIN" not in name:
-                return False
-
-    return True
+    """
+    Check that text contains no letters of a non-Latin script.
+    Numbers, punctuation, symbols, and whitespace are allowed regardless of script.
+    """
+    return not contains_non_latin_letters(text)
 
 
 def utf8len(s: str) -> int:

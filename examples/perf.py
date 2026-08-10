@@ -45,6 +45,6 @@ if __name__ == "__main__":
     num_mismatches = len(ds)
     if num_mismatches:
         print(f"Found {num_mismatches} mismatches saving to 'mismatches.parquet'")
-        ds.to_parquet("missmatches.parquet")
+        ds.to_parquet("mismatches.parquet")
     else:
         print("No mismatches found!")

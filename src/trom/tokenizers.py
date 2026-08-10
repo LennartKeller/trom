@@ -1,3 +1,4 @@
+import logging
 import re
 from functools import lru_cache
 from typing import Callable, Optional
@@ -9,6 +10,8 @@ from .environ import (
 )
 from .unicode import split_utf8_near_whitespace
 from .utils import get_lang_code
+
+logger = logging.getLogger(__name__)
 
 _MosesTokenizer = None
 _spacy = None
@@ -39,8 +42,6 @@ def tokenizer_khmer(s: str) -> list[str]:
     global _tokenize_khmer
     if _tokenize_khmer is None:
         from khmernltk import word_tokenize as _tokenize_khmer
-
-        _tokenize_khmer = _tokenize_khmer
     return _tokenize_khmer(s, return_tokens=True)
 
 
@@ -80,7 +81,7 @@ def tokenize_cantonese(s: str) -> list[str]:
 
 
 if CHINESE_TOKENIZER_BACKEND == "jieba":
-    print("Using jieba for Chinese tokenization.")
+    logger.debug("Using jieba for Chinese tokenization.")
 
     _jieba = None
 
@@ -100,7 +101,7 @@ if CHINESE_TOKENIZER_BACKEND == "jieba":
         return list(_jieba.cut(s))
 
 elif CHINESE_TOKENIZER_BACKEND == "thulac":
-    print("Using thulac for Chinese tokenization.")
+    logger.debug("Using thulac for Chinese tokenization.")
     _thulac = None
 
     @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
@@ -116,8 +117,10 @@ elif CHINESE_TOKENIZER_BACKEND == "thulac":
         tokens = _thulac.cut(s)
         return [token[0] for token in tokens]
 else:
+    logger.debug("Using pkuseg for Chinese tokenization.")
     _pkuseg = None
 
+    @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
     def tokenize_chinese(s: str) -> list[str]:
         """
         Tokenize Chinese text using pkuseg.
@@ -223,9 +226,7 @@ def get_spacy_tokenizer(lang: str):
         # which has a max byte limit we need to respect
         @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
         def tokenize(s: str) -> list[str]:
-            f"""
-            Tokenize {lang} text using spaCy with SudachiPy max bytes handling.
-            """
+            """Tokenize text using spaCy with SudachiPy max bytes handling."""
             segments = split_utf8_near_whitespace(
                 s, max_bytes=SUDACHIPY_MAX_BYTES - 100
             )
@@ -239,35 +240,45 @@ def get_spacy_tokenizer(lang: str):
 
         @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
         def tokenize(s: str) -> list[str]:
-            f"""
-            Tokenize {lang} text using spaCy.
-            """
+            """Tokenize text using spaCy."""
             return [t.text for t in tokenizer(s) if not t.is_space]
 
     return tokenize
 
 
+# Maps language codes to zero-argument factories so that expensive tokenizers
+# (spaCy models, Moses instances, ...) are only constructed when actually requested.
+_TOKENIZER_FACTORIES: dict[str, Callable[[], Callable[[str], list[str]]]] = {
+    "khm": lambda: tokenizer_khmer,
+    "yue": lambda: tokenize_cantonese,
+    "zho": lambda: tokenize_chinese,
+    "cmn": lambda: tokenize_chinese,  # Mandarin Chinese
+    "tha": lambda: tokenize_thai,
+    "lao": lambda: tokenize_lao,
+    # SacreMoses: French splits "l'espoir" in ["l'", "espoir"] which is harmful for our purposes
+    "fra": lambda: tokenize_whitespace,
+    "cjk": lambda: get_moses_tokenizer(lang="zh"),
+    "eng": lambda: get_moses_tokenizer(lang="en"),
+    "jpn": lambda: tokenize_japanese
+    if JAPANESE_TOKENIZER_BACKEND == "sudachipy"
+    else get_spacy_tokenizer("jpn"),
+    "kor": lambda: get_spacy_tokenizer("kor"),
+}
+
+
+@lru_cache(maxsize=None)
+def _resolve_tokenizer(part3_lang_code: str) -> Callable[[str], list[str]]:
+    return _TOKENIZER_FACTORIES[part3_lang_code]()
+
+
 @lru_cache(maxsize=None)
 def get_tokenizer_lang_map() -> dict[str, Callable[[str], list[str]]]:
-    LANGUAGE_TO_TOKENIZER_MAP = {
-        "khm": tokenizer_khmer,
-        "yue": tokenize_cantonese,
-        "zho": tokenize_chinese,
-        "cmn": tokenize_chinese,  # Mandarin Chinese
-        "tha": tokenize_thai,
-        "lao": tokenize_lao,
-        # SacreMoses: French splits "l'espoir" in ["l'", "espoir"] which is harmful for our purposes
-        "fra": tokenize_whitespace,
-        "cjk": get_moses_tokenizer(lang="zh"),
-        "eng": get_moses_tokenizer(lang="en"),
-        # "kor": get_moses_tokenizer(lang="ko"),
-        # "jpn": get_moses_tokenizer(lang="ja"),
-        "jpn": tokenize_japanese
-        if JAPANESE_TOKENIZER_BACKEND == "sudachipy"
-        else get_spacy_tokenizer("jpn"),
-        "kor": get_spacy_tokenizer("kor"),
-    }
-    return LANGUAGE_TO_TOKENIZER_MAP
+    """Resolve and return all language-specific tokenizers at once.
+
+    Note: this eagerly constructs every tokenizer (including spaCy models).
+    Prefer `get_tokenizer_for_lang` which only loads what is requested.
+    """
+    return {lang: _resolve_tokenizer(lang) for lang in _TOKENIZER_FACTORIES}
 
 
 def get_tokenizer_for_lang(
@@ -279,9 +290,9 @@ def get_tokenizer_for_lang(
     it defaults to Moses tokenizer if `default_moses` is True,
     otherwise it defaults to whitespace tokenizer.
     """
-    part2_lang_code = get_lang_code(lang_code)
-    if part2_lang_code in get_tokenizer_lang_map():
-        return get_tokenizer_lang_map()[part2_lang_code]
+    part3_lang_code = get_lang_code(lang_code)
+    if part3_lang_code in _TOKENIZER_FACTORIES:
+        return _resolve_tokenizer(part3_lang_code)
     elif default_moses:
         return get_moses_tokenizer(lang=lang_code)
     else:

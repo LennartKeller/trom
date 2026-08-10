@@ -1,7 +1,6 @@
+import logging
 import re
 import subprocess
-import sys
-import unicodedata
 from functools import lru_cache
 from typing import Callable, Literal, Optional
 
@@ -10,7 +9,7 @@ from uroman_rs import Uroman as UromanRS
 
 from .environ import NO_ICU, ROMANIZER_CACHE_SIZE
 from .tokenizers import get_tokenizer_for_lang
-from .unicode import string_is_only_punct
+from .unicode import contains_non_latin_letters, string_is_only_punct
 
 try:
     from icu import Transliterator, UnicodeString
@@ -20,10 +19,42 @@ except ImportError:
     HAS_PYICU = False
 
 
-JOINER_PUNCTUATION = set(":=/\\")
+logger = logging.getLogger(__name__)
 
 
-class TromRomanizer: ...
+class TromRomanizer:
+    """
+    Base class for all romanizers.
+
+    Provides the shared pre-/postprocessing hooks and separator-based
+    tokenization. Subclasses implement `_romanize` for a single unit of text
+    and may extend `__call__` with backend-specific keyword arguments.
+    """
+
+    def __init__(
+        self,
+        preprocessor: Optional[Callable[[str], str]] = None,
+        postprocessor: Optional[Callable[[str], str]] = None,
+        sep: str = " ",
+    ):
+        self.preprocessor = preprocessor or (lambda x: x)
+        self.postprocessor = postprocessor or (lambda x: x)
+        self.sep = sep
+
+    def _split(self, text: str) -> list[str]:
+        """Split text into units according to the configured separator."""
+        if self.sep == "":
+            return list(text)
+        return text.split(self.sep)
+
+    def _romanize(self, s: str, **kwargs) -> str:
+        raise NotImplementedError
+
+    def __call__(self, text: str, **kwargs) -> str:
+        text = self.preprocessor(text)
+        romanized_units = [self._romanize(unit, **kwargs) for unit in self._split(text)]
+        romanized_text = self.sep.join(romanized_units)
+        return self.postprocessor(romanized_text)
 
 
 def get_spacing_processor(
@@ -44,43 +75,15 @@ def get_spacing_processor(
             if not words:
                 return text
 
-            def string_is_only_digits(s: str) -> bool:
-                return all(char.isdigit() for char in s)
-
-            def is_joiner(s: str) -> bool:
-                return all(char in JOINER_PUNCTUATION for char in s)
-
             result = []
             for i, token in enumerate(words):
-                is_punct = string_is_only_punct(token)
-                is_digit = string_is_only_digits(token)
-
-                if is_punct:
-                    # Check if previous token was also punctuation
-                    prev_is_punct = i > 0 and string_is_only_punct(words[i - 1])
-
-                    if prev_is_punct and is_joiner(token):
-                        # Joiner punctuation: attach to previous token without space
-                        result.append(token)
-
-                    if prev_is_punct:
-                        # Multiple consecutive punctuation: attach to previous
-                        result.append(token)
-                    else:
-                        # First punctuation after word: attach to previous word
-                        result.append(token)
-                elif is_digit:
-                    # Digits: add space before unless it's first token
-                    if i == 0:
-                        result.append(token)
-                    else:
-                        result.append(" " + token)
+                if string_is_only_punct(token):
+                    # Punctuation always attaches to the previous token without a space
+                    result.append(token)
+                elif i == 0:
+                    result.append(token)
                 else:
-                    # Regular word: add space before unless it's first token
-                    if i == 0:
-                        result.append(token)
-                    else:
-                        result.append(" " + token)
+                    result.append(" " + token)
             return "".join(result).strip()
     else:
 
@@ -125,10 +128,9 @@ class URomanizer(TromRomanizer):
         split_alphanumeric: bool = False,
         backend: Literal["python", "rust"] = "python",
     ):
-        self.preprocessor = preprocessor or (lambda x: x)
-        self.postprocessor = postprocessor or (lambda x: x)
-        self.uroman = ur.Uroman()
-        self.sep = sep
+        super().__init__(
+            preprocessor=preprocessor, postprocessor=postprocessor, sep=sep
+        )
         self.split_alphanumeric = split_alphanumeric
         if backend not in ("python", "rust"):
             raise ValueError(f"Invalid backend: {backend}. Choose 'python' or 'rust'.")
@@ -167,11 +169,9 @@ class URomanizer(TromRomanizer):
 
     def __call__(self, text: str, lcode: Optional[str] = None) -> str:
         text = self.preprocessor(text)
-        if self.sep == "":
-            tokens = list(text)
-        else:
-            tokens = text.split(self.sep)
-        romanized_units = [self._romanize(token, lcode=lcode) for token in tokens]
+        romanized_units = [
+            self._romanize(token, lcode=lcode) for token in self._split(text)
+        ]
 
         # Post-process to split alphanumeric tokens
         if self.split_alphanumeric:
@@ -186,7 +186,7 @@ class URomanizer(TromRomanizer):
 
 def clean_uromanized_string(s: str) -> str:
     """
-    Aggresively cleans a uromanized string.
+    Aggressively cleans a uromanized string.
     """
     s = s.lower()
 
@@ -308,7 +308,7 @@ def uconv_romanize(
         )
 
         if verbose and process.stderr:
-            print(f"Warning: {process.stderr}", file=sys.stderr)
+            logger.warning("uconv: %s", process.stderr)
 
         return process.stdout
 
@@ -316,17 +316,6 @@ def uconv_romanize(
         raise UConvRomanizationError(f"Romanization failed: {e}")
     except Exception as e:
         raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
-
-
-@lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
-def _uconv_romanize(self, s: str, src_script: Optional[str] = None) -> str:
-    if not s.strip():
-        return s
-    romanized = uconv_romanize(
-        s, src_script=src_script, verbose=self.verbose, uconv_path=self.uconv_path
-    )
-
-    return romanized
 
 
 class UConvRomanizer(TromRomanizer):
@@ -351,12 +340,12 @@ class UConvRomanizer(TromRomanizer):
             uconv_path: Path to uconv executable
             verbose: Whether to print debug information
         """
-        self.sep = sep
+        super().__init__(
+            preprocessor=preprocessor, postprocessor=postprocessor, sep=sep
+        )
         self._check_if_installed(uconv_path)
         self.uconv_path = uconv_path
         self.verbose = verbose
-        self.preprocessor = preprocessor or (lambda x: x)
-        self.postprocessor = postprocessor or (lambda x: x)
 
     @staticmethod
     def _check_if_installed(uconv_path: str) -> None:
@@ -372,21 +361,21 @@ class UConvRomanizer(TromRomanizer):
             raise UConvInstallationError(f"uconv not found at path: {uconv_path}")
 
     def _romanize(self, s: str, src_script: Optional[str] = None) -> str:
+        if not s.strip():
+            return s
         if HAS_PYICU and not NO_ICU:
             try:
                 return icu_romanize(s, src_script=src_script)
             except ICUTransliterationError:
                 pass
-        return _uconv_romanize(self, s, src_script=src_script)
+        return uconv_romanize(
+            s, src_script=src_script, verbose=self.verbose, uconv_path=self.uconv_path
+        )
 
     def __call__(self, text: str, src_script: Optional[str] = None) -> str:
         if not text.strip():
             return text
         text = self.preprocessor(text)
-        if self.sep == "":
-            tokens = list(text)
-        else:
-            tokens = text.split(self.sep)
 
         def merciful_romanize(token: str) -> str:
             try:
@@ -394,7 +383,7 @@ class UConvRomanizer(TromRomanizer):
             except Exception:
                 return token
 
-        romanized = [merciful_romanize(token) for token in tokens]
+        romanized = [merciful_romanize(token) for token in self._split(text)]
         romanized_text = self.sep.join(romanized)
         if HAS_PYICU and not NO_ICU:
             romanized_text = re.sub(r" +", " ", romanized_text).strip()
@@ -442,39 +431,43 @@ class UnifiedRomanizer(TromRomanizer):
         verbose: bool = False,
         **uroman_kwargs,
     ):
-        self.preprocessor = preprocessor or (lambda x: x)
-        self.postprocessor = postprocessor or (lambda x: x)
-        self.sep = sep
+        super().__init__(
+            preprocessor=preprocessor, postprocessor=postprocessor, sep=sep
+        )
         self.verbose = verbose
 
         # Initialize available backends
         self.backends = {}
         self._init_backends(uroman_backend, uconv_path, uroman_kwargs)
 
-        # Determine backend preference order
-        if backend_preference == "auto":
-            # Default order: ICU > uconv > uroman
-            self.backend_preference = []
-            if "icu" in self.backends:
-                self.backend_preference.append("icu")
-            elif "uconv" in self.backends:
-                self.backend_preference.append("uconv")
-            if "uroman" in self.backends:
-                self.backend_preference.append("uroman")
-        else:
-            # User specified preference
-            self.backend_preference = [backend_preference]
-
         if not self.backends:
             raise RuntimeError(
                 "No romanization backends available. Install PyICU, uconv, or uroman."
             )
 
+        # Determine backend preference order
+        if backend_preference == "auto":
+            # Default order: ICU/uconv > uroman
+            self.backend_preference = [
+                b for b in ("icu", "uroman") if b in self.backends
+            ]
+        else:
+            # User specified preference. "uconv" and "icu" are served by the same
+            # backend (UConvRomanizer prefers in-process ICU and falls back to uconv).
+            requested = "icu" if backend_preference == "uconv" else backend_preference
+            if requested not in self.backends:
+                raise RuntimeError(
+                    f"Requested backend '{backend_preference}' is not available. "
+                    f"Available backends: {list(self.backends.keys())}"
+                )
+            self.backend_preference = [requested]
+
         if self.verbose:
-            print(
-                f"UnifiedRomanizer initialized with backends: {list(self.backends.keys())}"
+            logger.info(
+                "UnifiedRomanizer initialized with backends: %s (preference: %s)",
+                list(self.backends.keys()),
+                self.backend_preference,
             )
-            print(f"Backend preference: {self.backend_preference}")
 
     def _init_backends(
         self,
@@ -495,12 +488,12 @@ class UnifiedRomanizer(TromRomanizer):
             self.backends["icu"] = uconv_romanizer
             if self.verbose:
                 if HAS_PYICU and not NO_ICU:
-                    print("ICU (PyICU) backend available")
+                    logger.info("ICU (PyICU) backend available")
                 else:
-                    print(f"uconv backend available at {uconv_path}")
+                    logger.info("uconv backend available at %s", uconv_path)
         except UConvInstallationError:
             if self.verbose:
-                print("Neither ICU nor uconv available")
+                logger.info("Neither ICU nor uconv available")
 
         # Initialize uroman backend (always available as fallback)
         try:
@@ -511,10 +504,12 @@ class UnifiedRomanizer(TromRomanizer):
                 **uroman_kwargs,
             )
             if self.verbose:
-                print(f"uroman backend available ({uroman_backend} implementation)")
+                logger.info(
+                    "uroman backend available (%s implementation)", uroman_backend
+                )
         except Exception as e:
             if self.verbose:
-                print(f"uroman backend initialization failed: {e}")
+                logger.info("uroman backend initialization failed: %s", e)
 
     def _romanize_with_backend(
         self, text: str, backend: str, lcode: Optional[str] = None
@@ -531,21 +526,10 @@ class UnifiedRomanizer(TromRomanizer):
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
-    def _has_non_latin_letters(self, text: str) -> bool:
+    @staticmethod
+    def _has_non_latin_letters(text: str) -> bool:
         """Check if text contains non-Latin letters (excluding punctuation, numbers, spaces)."""
-        for char in text:
-            category = unicodedata.category(char)
-            # Only check letters (L*)
-            if category.startswith("L"):
-                # Check if it's a Latin letter
-                try:
-                    name = unicodedata.name(char)
-                    if "LATIN" not in name:
-                        return True
-                except ValueError:
-                    # Character has no name, consider it non-Latin
-                    return True
-        return False
+        return contains_non_latin_letters(text)
 
     def _romanize_text(self, text: str, lcode: Optional[str] = None) -> str:
         """Romanize text using available backends.
@@ -577,11 +561,13 @@ class UnifiedRomanizer(TromRomanizer):
                     else:
                         # ICU partially romanized but non-Latin letters remain
                         if self.verbose:
-                            print(f"{backend} left non-Latin characters, trying uroman")
+                            logger.debug(
+                                "%s left non-Latin characters, trying uroman", backend
+                            )
                         break
                 except Exception as e:
                     if self.verbose:
-                        print(f"{backend} failed: {e}, trying next backend")
+                        logger.debug("%s failed: %s, trying next backend", backend, e)
                     continue
 
         # Fallback to uroman if ICU/uconv didn't fully romanize
@@ -597,7 +583,7 @@ class UnifiedRomanizer(TromRomanizer):
                     return result
             except Exception as e:
                 if self.verbose:
-                    print(f"uroman fallback failed: {e}")
+                    logger.debug("uroman fallback failed: %s", e)
 
         # Return ICU result if we have it, otherwise return original (merciful mode)
         return icu_result if icu_result is not None else text
@@ -681,7 +667,10 @@ def get_romanizer_for_lang(
     tokenizer = get_tokenizer_for_lang(lang)
 
     if preprocessor is None:
-        preprocessor = lambda text: text
+
+        def preprocessor(text: str) -> str:
+            return text
+
     elif preprocessor == "aggressive":
 
         def preprocessor(text: str) -> str:
@@ -697,7 +686,10 @@ def get_romanizer_for_lang(
         preprocessor = get_spacing_processor(tokenizer)
 
     if postprocessor is None:
-        postprocessor = lambda text: text
+
+        def postprocessor(text: str) -> str:
+            return text
+
     elif postprocessor == "aggressive":
         postprocessor = clean_uromanized_string
 
