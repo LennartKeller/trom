@@ -18,8 +18,6 @@ uv add "trom @ git+https://github.com/LennartKeller/trom.git"
 
 ### Reproducibility
 
-The `uroman` and `uroman-rs` dependencies are pinned to exact git revisions in `pyproject.toml`, so every trom version produces fixed, reproducible romanization output. To upgrade a backend, bump its `rev` deliberately — `tests/test_golden_outputs.py` will fail if the upgrade changes romanization behavior, forcing a conscious review. (ICU/uconv output still depends on the ICU version installed on the host.)
-
 For the ICU backend you need PyICU (already a dependency) or the `uconv` binary (`brew install icu4c` / `apt install icu-devtools`). On macOS, see `install_icupy_macos.sh` for building PyICU against Homebrew's ICU.
 
 ## Quickstart

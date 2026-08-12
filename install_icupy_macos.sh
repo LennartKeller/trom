@@ -1,5 +1,18 @@
-export ICU_PREFIX=$(brew --prefix icu4c@78)
-export CFLAGS="-I$ICU_PREFIX/include"
-export LDFLAGS="-L$ICU_PREFIX/lib -Wl,-rpath,$ICU_PREFIX/lib"
-export PKG_CONFIG_PATH="$ICU_PREFIX/lib/pkgconfig"
-uv add --no-binary pyicu
+#!/bin/sh
+# (Re)build PyICU against Homebrew's icu4c on macOS.
+#
+# The build environment (PKG_CONFIG_PATH etc. pointing at the keg-only
+# icu4c@78) lives in pyproject.toml under [tool.uv.extra-build-variables],
+# so a plain `uv sync` already builds correctly. This script exists to force
+# a rebuild when the cached wheel is linked against an ICU that no longer
+# exists (symptom: `import icu` fails with "Library not loaded:
+# @rpath/libicui18n.NN.dylib" and trom warns about falling back to uconv).
+set -ex
+
+brew list icu4c@78 >/dev/null
+
+uv cache clean pyicu
+uv sync --reinstall-package pyicu
+
+# Verify the fresh build imports and report the linked ICU version
+uv run python -c "import icu; print('PyICU OK, ICU version:', icu.ICU_VERSION)"

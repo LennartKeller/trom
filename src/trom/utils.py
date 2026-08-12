@@ -1,7 +1,16 @@
 from functools import lru_cache
 from typing import Literal
 
-from iso639 import languages
+from iso639 import Lang
+from iso639.exceptions import InvalidLanguageValue
+
+_FIELDS = {
+    "part1": "pt1",
+    "part2b": "pt2b",
+    "part2t": "pt2t",
+    "part3": "pt3",
+    "name": "name",
+}
 
 
 @lru_cache(maxsize=10_000)
@@ -13,32 +22,17 @@ def get_lang_code(
     if split_on_dash:
         lang = lang.split("-")[0]
 
-    language = None
-    if len(lang) == 3:
-        for p in ("part2b", "part2t", "part3"):
-            try:
-                language = languages.get(**{p: lang})
-                break
-            except KeyError:
-                continue
-    elif len(lang) == 2:
-        try:
-            language = languages.get(part1=lang)
-        except KeyError:
-            language = None
-    elif len(lang) > 3:
-        try:
-            language = languages.get(name=lang)
-        except KeyError:
-            language = None
+    try:
+        language = Lang(lang)
+    except InvalidLanguageValue:
+        raise ValueError(f"Language code '{lang}' not found in ISO 639-1/2/3.")
 
     what = what.lower()
-    if what != "full":
-        result = getattr(language, what, None)
-    else:
-        result = language
+    if what == "full":
+        return language
 
-    if result is None:
-        raise ValueError(f"Language code '{lang}' not found in ISO 639-1/2/3.")
+    result = getattr(language, _FIELDS[what], None)
+    if not result:  # iso639-lang uses "" for missing codes
+        raise ValueError(f"Language code '{lang}' has no {what} code.")
 
     return result

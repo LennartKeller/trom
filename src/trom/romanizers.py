@@ -9,14 +9,23 @@ from uroman_rs import Uroman as UromanRS
 
 from .environ import NO_ICU, ROMANIZER_CACHE_SIZE
 from .tokenizers import get_tokenizer_for_lang
-from .unicode import contains_non_latin_letters, string_is_only_punct
+from .unicode import (
+    RESIDUAL_RUN_RE,
+    compile_script_run_re,
+    remove_diacritics,
+    string_is_only_punct,
+)
 
 try:
     from icu import Transliterator, UnicodeString
 
     HAS_PYICU = True
-except ImportError:
+    PYICU_IMPORT_ERROR = None
+except ImportError as e:
     HAS_PYICU = False
+    # Kept for diagnostics: distinguishes "PyICU not installed" from a build
+    # linked against an ICU that no longer exists on this machine.
+    PYICU_IMPORT_ERROR = str(e)
 
 
 logger = logging.getLogger(__name__)
@@ -209,6 +218,43 @@ def clean_uromanized_string(s: str) -> str:
     return s.strip()
 
 
+def clean_romanized_string(s: str) -> str:
+    """
+    Aggressively clean a romanized string down to lowercase ASCII, tone-safely.
+
+    Counterpart to `clean_uromanized_string` for output that may come from the
+    ICU pass of `UnifiedRomanizer`: diacritics are folded into their base
+    letters (rather than stripped into spaces) and digits are kept, so tone
+    information encoded as numeric pinyin survives. To get tone digits into
+    the text in the first place, romanize with
+    `UnifiedRomanizer(numeric_pinyin=True)`; without that, ICU marks tones
+    with diacritics and folding removes them.
+    """
+    s = s.lower()
+
+    # Map quotation marks to a single quote
+    PUNCTUATION_TO_NORMALIZE = "'’ʼʻ"
+    norm_punct_translation_table = str.maketrans(
+        PUNCTUATION_TO_NORMALIZE, "'" * len(PUNCTUATION_TO_NORMALIZE)
+    )
+    s = s.translate(norm_punct_translation_table)
+
+    # Fold diacritics into base letters (ǔ -> u) instead of deleting the
+    # whole character like clean_uromanized_string does
+    s = remove_diacritics(s)
+
+    # Remove everything else, keeping digits (numeric pinyin tones)
+    s = re.sub("([^a-z0-9' ])", " ", s)
+
+    # Clean single "'"
+    s = re.sub(r"[ \n]+'[ \n]+", " ", s)
+
+    # Unify spaces
+    s = " ".join(s.split())
+
+    return s.strip()
+
+
 class UConvInstallationError(Exception): ...
 
 
@@ -218,28 +264,19 @@ class UConvRomanizationError(Exception): ...
 class ICUTransliterationError(Exception): ...
 
 
+def _build_translit_id(src_script: Optional[str] = None) -> str:
+    # Any-Latin, optionally prefixed by e.g. Greek-Latin;Any-Latin
+    translit_id = "Any-Latin"
+    if src_script and src_script.lower() != "any":
+        translit_id = f"{src_script}-Latin;{translit_id}"
+    return translit_id
+
+
 if HAS_PYICU and not NO_ICU:
 
     @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
-    def _get_icu_transliterator(src_script: Optional[str] = None) -> Transliterator:
-        """
-        Create and cache an ICU Transliterator for a given source script.
-
-        `src_script` should be something ICU knows as a transliterator ID prefix,
-        e.g. 'Any', 'Greek', 'Cyrillic', 'Katakana', etc.
-        """
-        if not HAS_PYICU:
-            raise ICUTransliterationError(
-                "PyICU is not installed. Please `pip install PyICU`."
-            )
-
-        # This mirrors your uconv logic:
-        #   Any-Latin, optionally prefixed by e.g. Greek-Latin;Any-Latin
-        # You can stack more rules here (e.g. Latin-ASCII) if you like.
-        translit_id = "Any-Latin"
-        if src_script and src_script.lower() != "any":
-            translit_id = f"{src_script}-Latin;{translit_id}"
-
+    def _get_icu_transliterator(translit_id: str) -> Transliterator:
+        """Create and cache an ICU Transliterator for a full transform ID."""
         tr = Transliterator.createInstance(translit_id)
         if tr is None:
             raise ICUTransliterationError(
@@ -249,6 +286,16 @@ if HAS_PYICU and not NO_ICU:
         return tr
 
     @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
+    def icu_transliterate(s: str, translit_id: str) -> str:
+        """Apply an arbitrary ICU transform (e.g. 'Han-Latin; Latin-NumericPinyin')."""
+        if not s.strip():
+            return s
+
+        tr = _get_icu_transliterator(translit_id)
+        us = UnicodeString(s)
+        res = tr.transliterate(us)
+        return str(res)
+
     def icu_romanize(
         s: str,
         src_script: Optional[str] = None,
@@ -263,16 +310,39 @@ if HAS_PYICU and not NO_ICU:
         Returns:
             Romanized string.
         """
-        if not s.strip():
-            return s
-
-        tr = _get_icu_transliterator(src_script)
-        us = UnicodeString(s)
-        res = tr.transliterate(us)
-        return str(res)
+        return icu_transliterate(s, _build_translit_id(src_script))
 
 
 @lru_cache(maxsize=ROMANIZER_CACHE_SIZE)
+def uconv_transliterate(
+    s: str,
+    translit_id: str,
+    verbose: bool = True,
+    uconv_path: str = "uconv",
+) -> str:
+    """Apply an arbitrary ICU transform via the uconv tool."""
+    if not s.strip():
+        return s
+    try:
+        process = subprocess.run(
+            [uconv_path, "-x", translit_id],
+            input=s,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        if verbose and process.stderr:
+            logger.warning("uconv: %s", process.stderr)
+
+        return process.stdout
+
+    except subprocess.SubprocessError as e:
+        raise UConvRomanizationError(f"Romanization failed: {e}")
+    except Exception as e:
+        raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
+
+
 def uconv_romanize(
     s: str,
     src_script: Optional[str] = None,
@@ -292,30 +362,9 @@ def uconv_romanize(
     Returns:
         str: The romanized string.
     """
-    if not s.strip():
-        return s
-    try:
-        transliteration_mode = "Any-Latin"
-        if src_script and src_script.lower() != "any":
-            transliteration_mode = f"{src_script}-Latin;{transliteration_mode}"
-
-        process = subprocess.run(
-            [uconv_path, "-x", transliteration_mode],
-            input=s,
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-
-        if verbose and process.stderr:
-            logger.warning("uconv: %s", process.stderr)
-
-        return process.stdout
-
-    except subprocess.SubprocessError as e:
-        raise UConvRomanizationError(f"Romanization failed: {e}")
-    except Exception as e:
-        raise UConvRomanizationError(f"Unexpected error during romanization: {e}")
+    return uconv_transliterate(
+        s, _build_translit_id(src_script), verbose=verbose, uconv_path=uconv_path
+    )
 
 
 class UConvRomanizer(TromRomanizer):
@@ -393,32 +442,58 @@ class UConvRomanizer(TromRomanizer):
 
 class UnifiedRomanizer(TromRomanizer):
     """
-    A unified romanizer that dynamically selects between ICU/uconv and uroman backends.
+    A unified romanizer combining ICU/uconv fidelity with uroman coverage.
 
-    This romanizer uses a simple heuristic:
-    1. Try ICU/uconv first (preferred for all scripts when available)
-    2. If ICU/uconv returns text unchanged (doesn't support the script), fallback to uroman
-    3. If uroman also returns unchanged, return original text (merciful mode)
+    Romanization happens in two passes at *residual-run* granularity:
 
-    This approach is much simpler than explicit script detection and works well because:
-    - ICU handles most common scripts (Cyrillic, Greek, Arabic, CJK, etc.)
-    - uroman fills in gaps for scripts ICU doesn't support (e.g., Cherokee)
-    - No complex script detection logic needed
+    1. ICU/uconv Any-Latin transliterates the whole text. ICU is inherently
+       robust to mixed scripts: it romanizes the characters it supports and
+       passes the rest through untouched.
+    2. Any maximal run of characters still outside the Latin, Common, and
+       Inherited scripts is romanized with uroman. Whatever neither backend
+       handles passes through unchanged (merciful mode).
+
+    Compared to deciding per token whether ICU output "looks romanized", this
+    keeps the backend choice a per-character-run property of the input: one
+    stray character ICU doesn't know (common in noisy web text) costs uroman
+    on that run only, not the ICU fidelity of the surrounding document, and
+    ICU transliteration artifacts (modifier letters, combining marks) can
+    never trigger a spurious fallback.
 
     Args:
         preprocessor: Optional preprocessing function applied before romanization
         postprocessor: Optional postprocessing function applied after romanization
-        sep: Separator used for tokenization (default: " ")
-        backend_preference: Preferred backend order ("auto", "icu", "uconv", "uroman")
+        sep: Accepted for API compatibility; romanization is whole-text and
+            no longer splits on it
+        backend_preference: "auto" (ICU first, uroman for residual runs),
+            "icu"/"uconv" (ICU only, residual runs pass through), or
+            "uroman" (uroman only)
         uroman_backend: Which uroman implementation to use ("python" or "rust")
         uconv_path: Path to uconv executable
         verbose: Whether to print warnings and debug info
+        script_overrides: Optional mapping of Unicode script names to how their
+            runs are romanized instead of the ICU pass: the string "uroman", or
+            an ICU transform ID (e.g. {"Thai": "uroman",
+            "Han": "Han-Latin; Latin-NumericPinyin"}). Runs are carved out
+            before pass 1, so this composes with the residual-run strategy.
+        numeric_pinyin: Convenience switch adding
+            {"Han": "Han-Latin; Latin-NumericPinyin"} to script_overrides, so
+            Mandarin tones survive later ASCII folding as digits
+            (see clean_romanized_string)
         **uroman_kwargs: Additional kwargs passed to URomanizer
 
     Attributes:
         backends: Dictionary mapping backend names to romanizer instances
-        backend_preference: List of backends to try in order
+        backend_preference: List of backends in use, in pass order
     """
+
+    _emitted_warnings: set[str] = set()
+
+    @classmethod
+    def _warn_once(cls, message: str) -> None:
+        if message not in cls._emitted_warnings:
+            cls._emitted_warnings.add(message)
+            logger.warning(message)
 
     def __init__(
         self,
@@ -429,12 +504,15 @@ class UnifiedRomanizer(TromRomanizer):
         uroman_backend: Literal["python", "rust"] = "python",
         uconv_path: str = "uconv",
         verbose: bool = False,
+        script_overrides: Optional[dict[str, str]] = None,
+        numeric_pinyin: bool = False,
         **uroman_kwargs,
     ):
         super().__init__(
             preprocessor=preprocessor, postprocessor=postprocessor, sep=sep
         )
         self.verbose = verbose
+        self.uconv_path = uconv_path
 
         # Initialize available backends
         self.backends = {}
@@ -445,15 +523,13 @@ class UnifiedRomanizer(TromRomanizer):
                 "No romanization backends available. Install PyICU, uconv, or uroman."
             )
 
-        # Determine backend preference order
+        # Determine which passes run. "uconv" and "icu" are served by the same
+        # backend (UConvRomanizer prefers in-process ICU and falls back to uconv).
         if backend_preference == "auto":
-            # Default order: ICU/uconv > uroman
             self.backend_preference = [
                 b for b in ("icu", "uroman") if b in self.backends
             ]
         else:
-            # User specified preference. "uconv" and "icu" are served by the same
-            # backend (UConvRomanizer prefers in-process ICU and falls back to uconv).
             requested = "icu" if backend_preference == "uconv" else backend_preference
             if requested not in self.backends:
                 raise RuntimeError(
@@ -461,6 +537,26 @@ class UnifiedRomanizer(TromRomanizer):
                     f"Available backends: {list(self.backends.keys())}"
                 )
             self.backend_preference = [requested]
+        self._use_icu = "icu" in self.backend_preference
+        self._use_uroman = "uroman" in self.backend_preference
+
+        # Per-script overrides, carved out of the text before the ICU pass.
+        self.script_overrides = dict(script_overrides or {})
+        if numeric_pinyin:
+            self.script_overrides.setdefault("Han", "Han-Latin; Latin-NumericPinyin")
+        self._script_run_res = {}
+        for script, target in self.script_overrides.items():
+            needed = "uroman" if target == "uroman" else "icu"
+            if needed not in self.backends or needed not in self.backend_preference:
+                logger.warning(
+                    "Ignoring script override %s -> %r: %s backend not in use",
+                    script,
+                    target,
+                    needed,
+                )
+                continue
+            # Raises ValueError for unknown script names
+            self._script_run_res[script] = compile_script_run_re(script)
 
         if self.verbose:
             logger.info(
@@ -486,14 +582,23 @@ class UnifiedRomanizer(TromRomanizer):
             )
             # UConvRomanizer._romanize uses ICU if available, otherwise uconv
             self.backends["icu"] = uconv_romanizer
-            if self.verbose:
-                if HAS_PYICU and not NO_ICU:
-                    logger.info("ICU (PyICU) backend available")
-                else:
-                    logger.info("uconv backend available at %s", uconv_path)
+            if not HAS_PYICU and not NO_ICU:
+                # Same transforms, but the subprocess is slower and the host's
+                # ICU version is not pinned by trom -- outputs may differ
+                # between machines. (A deliberate NO_ICU opt-out stays quiet.)
+                error = PYICU_IMPORT_ERROR or ""
+                if len(error) > 150:
+                    error = error[:150] + "..."
+                self._warn_once(
+                    f"PyICU failed to import ({error}); on macOS, run "
+                    "install_icupy_macos.sh to rebuild it. Falling back to the "
+                    f"uconv subprocess at {uconv_path} (unpinned ICU version, slower)"
+                )
         except UConvInstallationError:
-            if self.verbose:
-                logger.info("Neither ICU nor uconv available")
+            self._warn_once(
+                "Neither PyICU nor uconv is available; UnifiedRomanizer will "
+                "romanize with uroman only"
+            )
 
         # Initialize uroman backend (always available as fallback)
         try:
@@ -511,90 +616,102 @@ class UnifiedRomanizer(TromRomanizer):
             if self.verbose:
                 logger.info("uroman backend initialization failed: %s", e)
 
-    def _romanize_with_backend(
-        self, text: str, backend: str, lcode: Optional[str] = None
+    def _icu_transform(self, s: str, translit_id: str) -> str:
+        if HAS_PYICU and not NO_ICU:
+            return icu_transliterate(s, translit_id)
+        return uconv_transliterate(
+            s, translit_id, verbose=self.verbose, uconv_path=self.uconv_path
+        )
+
+    def _uroman_run(self, run: str, lcode: Optional[str] = None) -> str:
+        try:
+            return self.backends["uroman"]._romanize(run, lcode=lcode)
+        except Exception as e:
+            if self.verbose:
+                logger.debug("uroman failed on %r: %s", run, e)
+            return run
+
+    def _patch_residual_runs(self, text: str, lcode: Optional[str] = None) -> str:
+        """Pass 2: romanize with uroman every run ICU left in a foreign script."""
+        pieces = []
+        pos = 0
+        for m in RESIDUAL_RUN_RE.finditer(text):
+            pieces.append(text[pos : m.start()])
+            pieces.append(self._uroman_run(m.group(), lcode=lcode))
+            pos = m.end()
+        if pos == 0:
+            return text
+        pieces.append(text[pos:])
+        return "".join(pieces)
+
+    def _romanize_segment(self, segment: str, lcode: Optional[str] = None) -> str:
+        """Run the ICU pass and the uroman residual pass over one text segment."""
+        result = segment
+        if self._use_icu:
+            try:
+                result = self.backends["icu"]._romanize(segment, src_script=None)
+            except Exception as e:
+                if self.verbose:
+                    logger.debug("ICU pass failed: %s", e)
+                result = segment
+        if self._use_uroman:
+            result = self._patch_residual_runs(result, lcode=lcode)
+        return result
+
+    def _iter_override_runs(self, text: str):
+        """Yield (start, end, script, run) for script-override runs, in order."""
+        matches = []
+        for script, run_re in self._script_run_res.items():
+            for m in run_re.finditer(text):
+                matches.append((m.start(), m.end(), script, m.group()))
+        matches.sort()
+        return matches
+
+    def _romanize_override_run(
+        self, run: str, script: str, lcode: Optional[str] = None
     ) -> str:
-        """Romanize text using specified backend romanizer."""
-        romanizer = self.backends[backend]
-
-        if backend == "icu":
-            # UConvRomanizer instance - call its _romanize method
-            return romanizer._romanize(text, src_script=None)
-        elif backend == "uroman":
-            # URomanizer instance - call its _romanize method
-            return romanizer._romanize(text, lcode=lcode)
-        else:
-            raise ValueError(f"Unknown backend: {backend}")
-
-    @staticmethod
-    def _has_non_latin_letters(text: str) -> bool:
-        """Check if text contains non-Latin letters (excluding punctuation, numbers, spaces)."""
-        return contains_non_latin_letters(text)
+        target = self.script_overrides[script]
+        if target == "uroman":
+            return self._uroman_run(run, lcode=lcode)
+        try:
+            result = self._icu_transform(run, target)
+        except Exception as e:
+            if self.verbose:
+                logger.debug("override transform %r failed: %s", target, e)
+            result = run
+        # Characters the transform has no mapping for (e.g. rare Han) still
+        # get the uroman fallback.
+        if self._use_uroman:
+            result = self._patch_residual_runs(result, lcode=lcode)
+        return result
 
     def _romanize_text(self, text: str, lcode: Optional[str] = None) -> str:
-        """Romanize text using available backends.
-
-        Strategy:
-        1. Try ICU/uconv first (preferred)
-        2. If ICU/uconv leaves non-Latin letters, fallback to uroman
-        3. If uroman also leaves non-Latin letters, return the best available result (merciful mode)
-        """
         if not text.strip():
             return text
 
-        icu_result = None
+        if not self._script_run_res:
+            return self._romanize_segment(text, lcode=lcode)
 
-        # Try ICU/uconv backends first (preferred for all scripts)
-        for backend in self.backend_preference:
-            if backend == "uroman":
-                continue  # Skip uroman, save it for fallback
-            if backend in self.backends:
-                try:
-                    result = self._romanize_with_backend(text, backend, lcode=lcode)
-                    # Save result for potential fallback
-                    icu_result = result
-
-                    # Check if romanization is complete (no non-Latin letters remain)
-                    if not self._has_non_latin_letters(result):
-                        # Fully romanized, use this result
-                        return result
-                    else:
-                        # ICU partially romanized but non-Latin letters remain
-                        if self.verbose:
-                            logger.debug(
-                                "%s left non-Latin characters, trying uroman", backend
-                            )
-                        break
-                except Exception as e:
-                    if self.verbose:
-                        logger.debug("%s failed: %s, trying next backend", backend, e)
-                    continue
-
-        # Fallback to uroman if ICU/uconv didn't fully romanize
-        if "uroman" in self.backends:
-            try:
-                result = self._romanize_with_backend(text, "uroman", lcode=lcode)
-                # Use uroman result if it's better (more romanized)
-                if not self._has_non_latin_letters(result):
-                    return result
-                # If uroman also didn't fully romanize, prefer uroman result anyway
-                # (it might handle scripts ICU missed)
-                if icu_result is None or self._has_non_latin_letters(icu_result):
-                    return result
-            except Exception as e:
-                if self.verbose:
-                    logger.debug("uroman fallback failed: %s", e)
-
-        # Return ICU result if we have it, otherwise return original (merciful mode)
-        return icu_result if icu_result is not None else text
+        pieces = []
+        pos = 0
+        for start, end, script, run in self._iter_override_runs(text):
+            if start < pos:  # overlap safety; should not happen for distinct scripts
+                continue
+            if start > pos:
+                pieces.append(self._romanize_segment(text[pos:start], lcode=lcode))
+            pieces.append(self._romanize_override_run(run, script, lcode=lcode))
+            pos = end
+        if pos < len(text):
+            pieces.append(self._romanize_segment(text[pos:], lcode=lcode))
+        return "".join(pieces)
 
     def __call__(self, text: str, lcode: Optional[str] = None) -> str:
         """
-        Romanize text using ICU/uconv first, with uroman as fallback.
+        Romanize text: ICU pass first, uroman on residual non-Latin runs.
 
         Args:
             text: Input text to romanize (may contain mixed scripts)
-            lcode: Optional language code (used for CJK languages with uroman)
+            lcode: Optional language code (passed to uroman)
 
         Returns:
             Romanized text
@@ -602,34 +719,13 @@ class UnifiedRomanizer(TromRomanizer):
         if not text.strip():
             return text
 
-        # Apply preprocessing
         text = self.preprocessor(text)
+        romanized_text = self._romanize_text(text, lcode=lcode)
 
-        # Handle separator-based tokenization
-        if self.sep == "":
-            # Character-by-character mode - romanize entire text at once
-            romanized_text = self._romanize_text(text, lcode=lcode)
-        else:
-            # Token-based mode with separator
-            tokens = text.split(self.sep)
-            romanized_tokens = []
-
-            for token in tokens:
-                if not token.strip():
-                    romanized_tokens.append(token)
-                    continue
-
-                # Romanize each token
-                romanized = self._romanize_text(token, lcode=lcode)
-                romanized_tokens.append(romanized)
-
-            romanized_text = self.sep.join(romanized_tokens)
-
-        # Clean up multiple spaces if using ICU/uconv
-        if "icu" in self.backends or "uconv" in self.backends:
+        # Clean up multiple spaces if the ICU pass is active
+        if self._use_icu:
             romanized_text = re.sub(r" +", " ", romanized_text).strip()
 
-        # Apply postprocessing
         romanized_text = self.postprocessor(romanized_text)
 
         return romanized_text

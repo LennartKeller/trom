@@ -3,6 +3,8 @@ import unicodedata
 from functools import lru_cache
 from typing import List
 
+import regex as uregex
+
 
 def nfd(s: str) -> str:
     return unicodedata.normalize("NFD", s)
@@ -349,6 +351,41 @@ def split_utf8_near_whitespace(text: str, max_bytes: int = 49149 - 100) -> List[
     # Remove any empty strings (could occur if text is all whitespace)
     assert all(utf8len(p) <= max_bytes for p in parts)
     return [p for p in parts if p]
+
+
+# A residual run is a maximal stretch of text in scripts other than Latin,
+# Common, and Inherited. Runs of the same kind are merged across intervening
+# Common/Inherited characters (spaces, punctuation, digits, combining marks),
+# and trailing combining marks stay attached to their run. Basing this on the
+# Unicode Script property (rather than character names) is what keeps
+# ICU transliteration artifacts like ʿ (Script=Common) or combining macrons
+# (Script=Inherited) from counting as "still not romanized".
+_NON_LCI = r"[^\p{Latin}\p{Common}\p{Inherited}]"
+RESIDUAL_RUN_RE = uregex.compile(
+    rf"{_NON_LCI}(?:[\p{{Common}}\p{{Inherited}}]*{_NON_LCI})*\p{{Inherited}}*"
+)
+
+
+def find_residual_runs(text: str) -> List[tuple[int, int]]:
+    """Return (start, end) spans of text not yet in Latin/Common/Inherited scripts."""
+    return [m.span() for m in RESIDUAL_RUN_RE.finditer(text)]
+
+
+@lru_cache(maxsize=None)
+def compile_script_run_re(script: str) -> "uregex.Pattern":
+    """
+    Compile a pattern matching maximal runs of the given Unicode script
+    (e.g. 'Thai', 'Han'), merged across Common/Inherited characters like
+    RESIDUAL_RUN_RE. Raises ValueError for unknown script names.
+    """
+    try:
+        script_cls = rf"\p{{{script}}}"
+        uregex.compile(script_cls)
+    except uregex.error:
+        raise ValueError(f"Unknown Unicode script name: {script!r}")
+    return uregex.compile(
+        rf"{script_cls}(?:[\p{{Common}}\p{{Inherited}}]*{script_cls})*\p{{Inherited}}*"
+    )
 
 
 EXTRA_MAP = str.maketrans(

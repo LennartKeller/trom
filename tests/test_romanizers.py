@@ -5,6 +5,7 @@ import pytest
 from trom.romanizers import (
     UnifiedRomanizer,
     URomanizer,
+    clean_romanized_string,
     clean_uromanized_string,
     get_romanizer_for_lang,
     get_spacing_processor,
@@ -755,3 +756,110 @@ class TestUnifiedRomanizerEdgeCases:
         result = romanizer(text)
         assert "Hello" in result or "hello" in result.lower()
         assert "World" in result or "world" in result.lower()
+
+
+_UNIFIED_HAS_ICU = "icu" in UnifiedRomanizer().backends
+requires_icu = pytest.mark.skipif(
+    not _UNIFIED_HAS_ICU, reason="neither PyICU nor uconv available"
+)
+
+
+class TestUnifiedRomanizerResidualRuns:
+    """Properties of the residual-run two-pass strategy."""
+
+    def test_word_level_consistency(self):
+        """Every word is romanized the same whether alone or in a sentence.
+
+        Regression test for the per-token fallback heuristic: ICU artifacts
+        like the modifier letter in its Arabic output used to flip single
+        tokens to uroman mid-sentence.
+        """
+        romanizer = UnifiedRomanizer()
+        for text in ("مرحبا بالعالم", "Никита Хрущёв щи ёж", "नमस्ते दुनिया"):
+            whole = romanizer(text)
+            per_word = " ".join(romanizer(word) for word in text.split())
+            assert whole == per_word
+
+    def test_foreign_char_does_not_flip_surrounding_text(self):
+        """One character ICU can't handle only costs uroman on that run.
+
+        Under the old whole-text fallback, a single Cherokee glyph switched an
+        entire Chinese document from ICU to uroman.
+        """
+        romanizer = UnifiedRomanizer()
+        clean = romanizer("今天天气很好", lcode="cmn")
+        noisy = romanizer("今天天气很好ᏣᎳᎩ", lcode="cmn")
+        assert noisy.startswith(clean)
+        assert "tsalagi" in noisy
+
+    @requires_icu
+    def test_icu_only_preference_disables_uroman_fallback(self):
+        """backend_preference='icu' must not silently use uroman."""
+        romanizer = UnifiedRomanizer(backend_preference="icu")
+        # Cherokee is not covered by ICU Any-Latin and must pass through
+        assert romanizer("ᎣᏏᏲ") == "ᎣᏏᏲ"
+
+    def test_uroman_only_preference_matches_uromanize(self):
+        romanizer = UnifiedRomanizer(backend_preference="uroman")
+        text = "Привет мир"
+        assert romanizer(text) == uromanize(text)
+
+    def test_uncovered_scripts_fall_back_to_uroman(self):
+        romanizer = UnifiedRomanizer()
+        result = romanizer("ᎣᏏᏲ ᎡᎶᎯ")
+        assert result == "osiyo elohi"
+
+    def test_combining_marks_survive(self):
+        """ICU output with combining marks must not trigger the uroman pass."""
+        romanizer = UnifiedRomanizer()
+        result = romanizer("มาลัย")  # ICU: "mālạy", uroman: "maalay"
+        assert is_latin_only(result)
+
+
+class TestUnifiedRomanizerScriptOverrides:
+    """Per-script coverage overrides carved out before the ICU pass."""
+
+    @requires_icu
+    def test_uroman_override(self):
+        romanizer = UnifiedRomanizer(script_overrides={"Thai": "uroman"})
+        # Thai forced through uroman, Cyrillic still via ICU
+        result = romanizer("สวัสดี Привет")
+        assert result.startswith(uromanize("สวัสดี"))
+        assert "Privet" in result
+
+    @requires_icu
+    def test_numeric_pinyin(self):
+        romanizer = UnifiedRomanizer(numeric_pinyin=True)
+        result = romanizer("你好世界 abc", lcode="cmn")
+        assert result == "ni3 hao3 shi4 jie4 abc"
+
+    @requires_icu
+    def test_numeric_pinyin_only_affects_han(self):
+        romanizer = UnifiedRomanizer(numeric_pinyin=True)
+        # Latin text with diacritics must not grow tone digits
+        assert romanizer("voilà café") == "voilà café"
+
+    def test_unknown_script_raises(self):
+        with pytest.raises(ValueError):
+            UnifiedRomanizer(script_overrides={"Klingon": "uroman"})
+
+
+class TestCleanRomanizedString:
+    """Tone-safe ASCII cleaning."""
+
+    def test_keeps_numeric_pinyin_tones(self):
+        assert clean_romanized_string("ni3 hao3!") == "ni3 hao3"
+
+    def test_folds_diacritics_instead_of_deleting(self):
+        assert clean_romanized_string("Hruŝëv ŝi ëž") == "hrusev si ez"
+        # clean_uromanized_string deletes the accented characters entirely
+        assert clean_uromanized_string("Hruŝëv ŝi ëž") == "hru v i"
+
+    def test_lowercases_and_strips_punctuation(self):
+        assert clean_romanized_string("Hello, World!") == "hello world"
+
+    @requires_icu
+    def test_tone_safe_pipeline(self):
+        romanizer = UnifiedRomanizer(numeric_pinyin=True)
+        result = clean_romanized_string(romanizer("你好世界", lcode="cmn"))
+        assert result == "ni3 hao3 shi4 jie4"

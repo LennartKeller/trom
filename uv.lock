@@ -1053,10 +1053,13 @@ wheels = [
 ]
 
 [[package]]
-name = "iso-639"
-version = "0.4.5"
+name = "iso639-lang"
+version = "2.6.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5a/8d/27969852f4e664525c3d070e44b2b719bc195f4d18c311c52e57bb93614e/iso-639-0.4.5.tar.gz", hash = "sha256:dc9cd4b880b898d774c47fe9775167404af8a85dd889d58f9008035109acce49", size = 167421, upload-time = "2016-04-29T14:57:29.657Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/5a/49bbf16d155192255e7bb37e403b2ac360144992d0d112a865afc62e457f/iso639_lang-2.6.3.tar.gz", hash = "sha256:078ddb7cd0182dcc04367691acc8022ddf7158b6cb09f08f798af823fa864265", size = 319391, upload-time = "2025-07-23T09:04:53.568Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/c7/f6fd3db6c33a164631c39dce2ca26a3794e3abf91b875cc99a43a5565d88/iso639_lang-2.6.3-py3-none-any.whl", hash = "sha256:a6c2fb9f739dca180dc7f48b098880f303bcce2cdf93a4ca3152ed8bbbb94fbb", size = 324990, upload-time = "2025-07-23T09:04:52.221Z" },
+]
 
 [[package]]
 name = "isort"
@@ -3335,7 +3338,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
-    { name = "iso-639" },
+    { name = "iso639-lang" },
     { name = "jieba" },
     { name = "khmer-nltk" },
     { name = "laonlp" },
@@ -3347,6 +3350,7 @@ dependencies = [
     { name = "pycantonese" },
     { name = "pyicu" },
     { name = "pythainlp" },
+    { name = "regex" },
     { name = "sacremoses" },
     { name = "spacy" },
     { name = "sudachidict-core" },
@@ -3376,7 +3380,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.3.0" },
-    { name = "iso-639", specifier = ">=0.4.5" },
+    { name = "iso639-lang", specifier = ">=2.6.0" },
     { name = "jieba", specifier = ">=0.42.1" },
     { name = "khmer-nltk", specifier = ">=1.6" },
     { name = "laonlp", specifier = ">=1.2.0" },
@@ -3387,13 +3391,14 @@ requires-dist = [
     { name = "pycantonese", specifier = ">=3.4.0" },
     { name = "pyicu", specifier = ">=2.16" },
     { name = "pythainlp", specifier = ">=5.1.2" },
+    { name = "regex", specifier = ">=2024.11.6" },
     { name = "sacremoses", specifier = ">=0.1.1" },
     { name = "spacy", specifier = ">=3.8.7" },
     { name = "sudachidict-core", specifier = ">=20251022" },
     { name = "sudachipy", specifier = ">=0.6.10" },
     { name = "thulac", specifier = ">=0.2.2" },
     { name = "uroman", git = "https://github.com/LennartKeller/uroman.git?rev=0d92c2cac55f3f73192323f2838f69281d2ac957" },
-    { name = "uroman-rs", git = "https://github.com/LennartKeller/uroman-rs.git?rev=225d91f9d54002ed643725070ed4ad7841f43e75" },
+    { name = "uroman-rs", git = "https://github.com/LennartKeller/uroman-rs.git?rev=3ce267eadc71ac45f2cf52df53c5c64f13b7b07f" },
 ]
 
 [package.metadata.requires-dev]
@@ -3475,7 +3480,7 @@ dependencies = [
 [[package]]
 name = "uroman-rs"
 version = "0.6.2"
-source = { git = "https://github.com/LennartKeller/uroman-rs.git?rev=225d91f9d54002ed643725070ed4ad7841f43e75#225d91f9d54002ed643725070ed4ad7841f43e75" }
+source = { git = "https://github.com/LennartKeller/uroman-rs.git?rev=3ce267eadc71ac45f2cf52df53c5c64f13b7b07f#3ce267eadc71ac45f2cf52df53c5c64f13b7b07f" }
 dependencies = [
     { name = "maturin" },
     { name = "pytest" },
