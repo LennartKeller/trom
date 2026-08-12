@@ -68,14 +68,23 @@ dev = [
 [tool.uv.extra-build-dependencies]
     pkuseg = ["numpy>=1.16.0"]
 
-# PyICU must be built from source against a known ICU. Homebrew's icu4c is
-# keg-only, so without these variables the build silently links whatever ICU
-# pkg-config finds first (e.g. a conda lib that later disappears, leaving an
-# unimportable module and a silent uconv/uroman fallback at runtime).
-# Paths are for Apple Silicon Homebrew; run install_icupy_macos.sh to
-# (re)build, e.g. after a `brew upgrade` removes the ICU major version.
+# PyICU must be built from source against Homebrew's ICU on macOS. The icu4c
+# keg is keg-only, so without these variables the build silently links
+# whatever ICU pkg-config finds first (e.g. a conda lib that later
+# disappears, leaving an unimportable module and a silent uconv/uroman
+# fallback at runtime). The unversioned icu4c keg tracks Homebrew's current
+# ICU; as documented in the README, romanization reproducibility depends on
+# the ICU version installed on the system. uv only accepts static values
+# here, so both standard Homebrew prefixes are listed (/opt/homebrew = Apple
+# Silicon, /usr/local = Intel); nonexistent directories are harmlessly
+# ignored, and on Linux the build falls through to the distro ICU. Run
+# install_icupy_macos.sh to rebuild after a `brew upgrade` changes the ICU
+# major version.
 [tool.uv]
 no-binary-package = ["pyicu"]
 
-[tool.uv.extra-build-variables]
-pyicu = { PKG_CONFIG_PATH = "/opt/homebrew/opt/icu4c@78/lib/pkgconfig", CFLAGS = "-I/opt/homebrew/opt/icu4c@78/include", CXXFLAGS = "-I/opt/homebrew/opt/icu4c@78/include", LDFLAGS = "-L/opt/homebrew/opt/icu4c@78/lib -Wl,-rpath,/opt/homebrew/opt/icu4c@78/lib" }
+[tool.uv.extra-build-variables.pyicu]
+PKG_CONFIG_PATH = "/opt/homebrew/opt/icu4c/lib/pkgconfig:/usr/local/opt/icu4c/lib/pkgconfig"
+CFLAGS = "-I/opt/homebrew/opt/icu4c/include -I/usr/local/opt/icu4c/include"
+CXXFLAGS = "-I/opt/homebrew/opt/icu4c/include -I/usr/local/opt/icu4c/include"
+LDFLAGS = "-L/opt/homebrew/opt/icu4c/lib -Wl,-rpath,/opt/homebrew/opt/icu4c/lib -L/usr/local/opt/icu4c/lib -Wl,-rpath,/usr/local/opt/icu4c/lib"
